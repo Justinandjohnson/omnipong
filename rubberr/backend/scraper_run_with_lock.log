@@ -1,0 +1,36 @@
+Traceback (most recent call last):
+  File "/Users/jjohnson/Desktop/omnipong/rubberr/backend/stadium_league_scraper.py", line 546, in <module>
+    asyncio.run(scrape_league_matches(LEAGUE_URL))
+  File "/opt/homebrew/Cellar/python@3.10/3.10.14/Frameworks/Python.framework/Versions/3.10/lib/python3.10/asyncio/runners.py", line 44, in run
+    return loop.run_until_complete(main)
+  File "/opt/homebrew/Cellar/python@3.10/3.10.14/Frameworks/Python.framework/Versions/3.10/lib/python3.10/asyncio/base_events.py", line 649, in run_until_complete
+    return future.result()
+  File "/Users/jjohnson/Desktop/omnipong/rubberr/backend/stadium_league_scraper.py", line 146, in scrape_league_matches
+    await page.screenshot(path=os.path.join(debug_dir, "matches_page_before_scrape.png"), full_page=True)
+  File "/opt/homebrew/lib/python3.10/site-packages/playwright/async_api/_generated.py", line 9983, in screenshot
+    await self._impl_obj.screenshot(
+  File "/opt/homebrew/lib/python3.10/site-packages/playwright/_impl/_page.py", line 657, in screenshot
+    encoded_binary = await self._channel.send("screenshot", params)
+  File "/opt/homebrew/lib/python3.10/site-packages/playwright/_impl/_connection.py", line 62, in send
+    return await self._connection.wrap_api_call(
+  File "/opt/homebrew/lib/python3.10/site-packages/playwright/_impl/_connection.py", line 492, in wrap_api_call
+    return await cb()
+  File "/opt/homebrew/lib/python3.10/site-packages/playwright/_impl/_connection.py", line 100, in inner_send
+    result = next(iter(done)).result()
+playwright._impl._errors.TargetClosedError: Target page, context or browser has been closed
+SCRIPT STARTING...
+🔒 Lock acquired (PID: 2674)
+Entered __main__
+Launching browser...
+>>> Logging in...
+  Accepted cookies modal
+✅ Login successful
+>>> Step: Navigating to league matches...
+  Note: Navigation warning: Target page, context or browser has been closed
+>>> Step: Ensuring MATCHES tab...
+  Note: MATCHES tab already active or error: Target page, context or browser has been closed
+>>> Step: Filtering by player: Johnson, Justin...
+  Note: Filtering error: Target page, context or browser has been closed
+>>> Taking screenshot of matches page...
+CRITICAL ERROR: Target page, context or browser has been closed
+🔓 Lock released

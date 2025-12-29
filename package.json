@@ -1,0 +1,12 @@
+{
+  "name": "omnipong-unified",
+  "version": "1.0.0",
+  "description": "Unified dev environment for OmniPong",
+  "main": "index.js",
+  "scripts": {
+    "dev": "concurrently --kill-others -n \"backend,frontend\" -c \"green,blue\" \"cd rubberr/backend && python3.10 main.py\" \"cd rubberr/frontend && npm run dev\""
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}
