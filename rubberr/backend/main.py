@@ -94,12 +94,21 @@ def get_user():
         session.close()
 
 @app.get("/matches")
-def get_matches():
+def get_matches(source: str = None):
     session = SessionLocal()
     try:
-        # Fetch detailed match history including source
-        # Fetch detailed match history including source
-        result = session.execute(text("SELECT date, opponent_name, opponent_rating, score_summary, result, source, set_scores FROM matches ORDER BY date DESC"))
+        # Build Query
+        query = "SELECT date, opponent_name, opponent_rating, score_summary, result, source, set_scores FROM matches"
+        params = {}
+        
+        if source:
+            query += " WHERE source = :source"
+            params["source"] = source
+            
+        query += " ORDER BY date DESC"
+        
+        # Fetch detailed match history
+        result = session.execute(text(query), params)
         
         matches = []
         for row in result:

@@ -2,7 +2,10 @@
 import React, { useState } from 'react';
 import { Gamepad2, Mic, Send, Trophy, Skull, Search, Square } from 'lucide-react';
 
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+
 export default function ArcadeScoreInput({ onScoreSubmit }: { onScoreSubmit: () => void }) {
+  // ... (State declarations remain same)
   const [input, setInput] = useState("");
   const [opponent, setOpponent] = useState("");
   const [loading, setLoading] = useState(false);
@@ -29,7 +32,7 @@ export default function ArcadeScoreInput({ onScoreSubmit }: { onScoreSubmit: () 
     if (!input || !opponent) return;
     setLoading(true);
     try {
-      const res = await fetch('http://localhost:8000/arcade/submit_score', {
+      const res = await fetch(`${API_URL}/arcade/submit_score`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -57,8 +60,8 @@ export default function ArcadeScoreInput({ onScoreSubmit }: { onScoreSubmit: () 
       setOpponent(name);
       if (name.length > 2) {
           try {
-              const res = await fetch('http://localhost:8000/arcade/lookup_player', {
-                  method: 'POST', 
+              const res = await fetch(`${API_URL}/arcade/lookup_player`, {
+                  method: 'POST',  
                   headers: {'Content-Type': 'application/json'},
                   body: JSON.stringify({ name })
               });
@@ -137,7 +140,7 @@ export default function ArcadeScoreInput({ onScoreSubmit }: { onScoreSubmit: () 
       formData.append("file", audioBlob, filename);
 
       try {
-          const res = await fetch('http://localhost:8000/arcade/transcribe', {
+          const res = await fetch(`${API_URL}/arcade/transcribe`, {
               method: 'POST',
               body: formData
           });

@@ -12,6 +12,7 @@ import { RefreshCw, MapPin, AlertCircle } from "lucide-react";
 
 import { useArcade } from "@/context/ArcadeContext";
 import ArcadeScoreInput from "@/components/ArcadeScoreInput";
+import ArcadeMatchList from "@/components/ArcadeMatchList";
 
 export default function Home() {
   const { isArcadeMode } = useArcade();
@@ -20,6 +21,7 @@ export default function Home() {
   const [location, setLocation] = useState<{ lat: number, lng: number, state?: string } | null>(null);
   const [loadingLoc, setLoadingLoc] = useState(false);
   const [viewMode, setViewMode] = useState<"usatt" | "league" | "arcade">("league");
+  const [arcadeRefresh, setArcadeRefresh] = useState(0);
 
   // Sync viewMode with global Arcade state
   useEffect(() => {
@@ -177,9 +179,14 @@ export default function Home() {
                   {loadingLoc && <span className="text-xs animate-pulse text-[var(--rubber-accent)]">Locating...</span>}
                 </div>
                 
-                {/* Arcade Mode Input Injection */}
                 {isArcadeMode && (
-                    <ArcadeScoreInput onScoreSubmit={fetchUser} />
+                    <div className="space-y-6 mb-8">
+                        <ArcadeScoreInput onScoreSubmit={() => {
+                            fetchUser();
+                            setArcadeRefresh(prev => prev + 1);
+                        }} />
+                        <ArcadeMatchList refreshTrigger={arcadeRefresh} />
+                    </div>
                 )}
 
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
