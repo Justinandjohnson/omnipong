@@ -18,7 +18,7 @@ from browser_manager import BrowserManager
 
 # Import shared utilities
 from .tournament_intelligence import get_tournament_intelligence
-from models import Activity, Event, Notification
+from models import Activity, Event, Notification, Base
 
 # Initialize models
 class ChatMessage(BaseModel):
@@ -46,6 +46,12 @@ app.add_middleware(
 
 # Database connection
 # Priority: env var (for Production/Render) > local sqlite file (Development)
+from models import Activity, Event, Notification, Base
+
+# ... (Previous imports)
+
+# Database connection
+# Priority: env var (for Production/Render) > local sqlite file (Development)
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 if DATABASE_URL:
@@ -57,6 +63,10 @@ else:
     # Local Development (SQLite)
     DB_URL = f"sqlite:///{os.path.abspath(os.path.join(os.path.dirname(__file__), '../../omnipong.db'))}"
     engine = create_engine(DB_URL, connect_args={"check_same_thread": False})
+
+# Create tables if they don't exist (Critical for fresh Render DB)
+Base.metadata.create_all(bind=engine)
+
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 @app.get("/")
