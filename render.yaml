@@ -3,9 +3,8 @@ services:
   - type: web
     name: omnipong-backend
     env: python
-    rootDir: rubberr/backend
-    buildCommand: "pip install -r ../../requirements.txt && pip install uvicorn gunicorn"
-    startCommand: "gunicorn -k uvicorn.workers.UvicornWorker main:app --bind 0.0.0.0:10000"
+    buildCommand: "cd rubberr/backend && pip install -r ../../requirements.txt && pip install uvicorn gunicorn"
+    startCommand: "cd rubberr/backend && gunicorn -k uvicorn.workers.UvicornWorker main:app --bind 0.0.0.0:10000"
     envVars:
       - key: PYTHON_VERSION
         value: 3.10.0
@@ -28,9 +27,8 @@ services:
   - type: web
     name: omnipong-frontend
     env: node
-    rootDir: rubberr/frontend
-    buildCommand: "npm install && npm run build"
-    startCommand: "npm start"
+    buildCommand: "cd rubberr/frontend && npm install && npm run build"
+    startCommand: "cd rubberr/frontend && npm start"
     envVars:
       - key: NODE_VERSION
         value: 20.10.0
