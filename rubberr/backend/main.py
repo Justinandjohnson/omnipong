@@ -17,7 +17,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")
 from browser_manager import BrowserManager
 
 # Import shared utilities
-from tournament_intelligence import get_tournament_intelligence
+from .tournament_intelligence import get_tournament_intelligence
 from models import Activity, Event, Notification
 
 # Initialize models
@@ -674,7 +674,7 @@ def save_arcade_match(session, opponent_name, result, score_summary, set_scores,
     return new_match
 
 # --- MULTI-MODAL & AI HANDLERS ---
-from ai_handler import transcribe_audio, parse_match_intent
+from .ai_handler import transcribe_audio, parse_match_intent
 from fastapi import File, UploadFile, Form, Request, Response
 import shutil
 import os
