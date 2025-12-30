@@ -88,7 +88,16 @@ export default function Home() {
       });
     } else {
       fetchTournaments();
+      fetchTournaments();
     }
+
+    // Poll User Stats every 10 seconds (for dynamic rating updates)
+    const interval = setInterval(() => {
+        fetchUser();
+    }, 10000);
+
+    return () => clearInterval(interval);
+
   }, []);
 
   const handleSyncOmni = async () => {

@@ -30,6 +30,13 @@ export default function ArcadeMatchList({ refreshTrigger }: { refreshTrigger: nu
 
     useEffect(() => {
         fetchMatches();
+        
+        // Poll every 5 seconds for new SMS matches
+        const interval = setInterval(() => {
+            fetchMatches();
+        }, 5000);
+        
+        return () => clearInterval(interval);
     }, [refreshTrigger]);
 
     if (loading) return <div className="text-center text-gray-500 animate-pulse">Loading Arcade History...</div>;

@@ -4,7 +4,7 @@
   "description": "Unified dev environment for OmniPong",
   "main": "index.js",
   "scripts": {
-    "dev": "concurrently --kill-others -n \"backend,frontend\" -c \"green,blue\" \"cd rubberr/backend && python3.10 main.py\" \"cd rubberr/frontend && npm run dev\""
+    "dev": "concurrently --kill-others -n \"backend,frontend\" -c \"green,blue\" \"python3.10 -m rubberr.backend.main\" \"cd rubberr/frontend && npm run dev\""
   },
   "devDependencies": {
     "concurrently": "^8.2.2"
