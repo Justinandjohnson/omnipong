@@ -11,6 +11,10 @@ import sys
 import anthropic
 import json
 from pydantic import BaseModel
+from dotenv import load_dotenv
+
+# Load .env variables
+load_dotenv(os.path.join(os.path.dirname(__file__), "../../.env"))
 
 # Add project root to path so we can import browser_manager
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
@@ -739,8 +743,13 @@ async def arcade_transcribe(file: UploadFile = File(...)):
             "missing": parsed.get("missing_info")
         }
     except Exception as e:
-        print(f"Transcribe Error: {e}")
-        return {"error": str(e)}
+        print(f"❌ Transcribe Error: {e}")
+        return {
+            "status": "error",
+            "error": str(e),
+            "transcript": "Error during processing",
+            "intent": {}
+        }
 
 @app.post("/webhooks/twilio")
 async def twilio_webhook(request: Request):
