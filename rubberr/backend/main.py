@@ -872,44 +872,48 @@ def arcade_lookup_player(req: PlayerSearch):
         session.close()
 
 @app.post("/arcade/submit_score")
-def arcade_submit_score(data: ArcadeScoreSubmission):
+async def arcade_submit_score(data: ArcadeScoreSubmission):
     """
     Parse and submit a score for Arcade Mode.
     Handles natural language input like 'I won 3-0' or '11-9, 11-8...'.
+    Uses the same AI logic as the SMS agent for high accuracy.
     """
     session = SessionLocal()
     try:
         from datetime import date
         
-        # 1. Parse Score Logic (Natural Language Processing 'Lite')
-        # This is a simplified regex-based parser. For advanced NLP, we'd use LLM calls.
-        raw_input = data.manual_score or data.transcript or ""
+        # 1. Smarter AI Parsing
+        # Use the same logic as the Twilio agent if transcript is provided
+        raw_input = data.transcript or data.manual_score or ""
         
-        # Default Results
-        result = "Win" # Optimistic default
-        score_summary = "3-0"
+        result = "Win"
+        score_summary = data.manual_score or "3-0"
         set_scores = ""
-        
-        # Simple heuristic parsing
-        import re
-        
-        # Detect clear set scores "11-9, 11-5, ..."
-        sets = re.findall(r'(\d{1,2}-\d{1,2})', raw_input)
-        if sets:
-            set_scores = ", ".join(sets)
-            # Count wins implies result?
-            # Assuming user is Left side? logic needed.
-            # User says "I won..." -> Result Win.
-            # "I lost..." -> Result Loss
-        
-        if "lost" in raw_input.lower() or "loss" in raw_input.lower():
-            result = "Loss"
-        
-        # Detect match score "3-1", "3 to 1"
-        match_score = re.search(r'(\d)\s*(?:-|to)\s*(\d)', raw_input)
-        if match_score and not sets:
-             score_summary = f"{match_score.group(1)}-{match_score.group(2)}"
-        
+        confirmation = ""
+
+        if raw_input:
+            try:
+                parsed = await parse_match_intent(raw_input)
+                intent = parsed.get("intent", {})
+                
+                # Extract values from AI parsing
+                u_score = intent.get("user_score")
+                o_score = intent.get("opponent_score")
+                if u_score is not None and o_score is not None:
+                    result = "Win" if u_score > o_score else "Loss"
+                    score_summary = f"{u_score}-{o_score}"
+                    set_scores = intent.get("set_scores", "")
+                    confirmation = parsed.get("confirmation_message", "")
+            except Exception as ai_err:
+                print(f"AI Parse fallback in arcade submission: {ai_err}")
+                # Fallback to simple regex if AI fails
+                import re
+                sets = re.findall(r'(\d{1,2}-\d{1,2})', raw_input)
+                if sets:
+                    set_scores = ", ".join(sets)
+                if "lost" in raw_input.lower() or "loss" in raw_input.lower():
+                    result = "Loss"
+
         # 2. Save Match to DB
         from models import Match, Player
         
@@ -936,7 +940,12 @@ def arcade_submit_score(data: ArcadeScoreSubmission):
         session.add(new_match)
         session.commit()
         
-        return {"status": "success", "match_id": new_match.id, "summary": f"Recorded {result} vs {opp_name} ({score_summary})"}
+        return {
+            "status": "success", 
+            "match_id": new_match.id, 
+            "summary": f"Recorded {result} vs {opp_name} ({score_summary})",
+            "confirmation": confirmation
+        }
         
     except Exception as e:
         session.rollback()

@@ -195,6 +195,9 @@ class MatchManager: NSObject, ObservableObject, AVAudioRecorderDelegate {
         matchHistory.insert(match, at: 0)
         showMatchComplete = true
         saveMatchHistory()
+        
+        // Auto-save to backend AI agent
+        saveMatch()
     }
 
     // MARK: - Recording Control
@@ -374,15 +377,22 @@ class MatchManager: NSObject, ObservableObject, AVAudioRecorderDelegate {
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         
+        // Send a rich transcript so the backend AI can parse it accurately
+        let transcript = generateMessageBody()
+        
         let body: [String: Any] = [
             "opponent_name": player2Name,
-            "manual_score": "\(player1Score)-\(player2Score)",
+            "manual_score": "\(player1Sets)-\(player2Sets)", // Send sets won, not current points
+            "transcript": transcript,
             "date": ISO8601DateFormatter().string(from: Date()).prefix(10)
         ]
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
         URLSession.shared.dataTask(with: request) { data, response, error in
-            if let error = error { print("❌ Save failed: \(error.localizedDescription)"); return }
-            print("✅ Match saved successfully")
+            if let error = error { 
+                print("❌ Save failed: \(error.localizedDescription)")
+            } else {
+                print("✅ Match saved successfully to backend/AI agent")
+            }
         }.resume()
     }
 
