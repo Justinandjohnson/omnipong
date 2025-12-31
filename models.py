@@ -55,7 +55,7 @@ class Match(Base):
     __tablename__ = 'matches'
     id = Column(Integer, primary_key=True)
     activity_id = Column(Integer, ForeignKey('activities.id'), nullable=True)
-    date = Column(Date)
+    date = Column(DateTime)
     winner_name = Column(String)
     loser_name = Column(String)
     opponent_name = Column(String)

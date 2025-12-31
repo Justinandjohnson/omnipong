@@ -384,7 +384,7 @@ class MatchManager: NSObject, ObservableObject, AVAudioRecorderDelegate {
             "opponent_name": player2Name,
             "manual_score": "\(player1Sets)-\(player2Sets)", // Send sets won, not current points
             "transcript": transcript,
-            "date": ISO8601DateFormatter().string(from: Date()).prefix(10)
+            "date": ISO8601DateFormatter().string(from: Date())
         ]
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
         URLSession.shared.dataTask(with: request) { [weak self] data, response, error in

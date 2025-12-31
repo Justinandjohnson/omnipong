@@ -925,11 +925,32 @@ async def arcade_submit_score(data: ArcadeScoreSubmission):
         existing_opp = session.execute(text("SELECT rating FROM players WHERE name = :n"), {"n": opp_name}).fetchone()
         if existing_opp and existing_opp.rating:
             opp_rating = existing_opp.rating
+
+        # Handle Date/Time (Support full ISO or simple date)
+        match_dt = datetime.now()
+        if data.date:
+            try:
+                # Try full ISO8601 first
+                match_dt = datetime.fromisoformat(data.date.replace('Z', '+00:00'))
+            except ValueError:
+                try:
+                    # Fallback to simple date
+                    match_dt = datetime.strptime(data.date, "%Y-%m-%d")
+                except:
+                    pass
             
+        # Determine Winner/Loser names for the record
+        # Note: In 'arcade' mode, we assume the user is "Justin" or the current App user.
+        user_name = "Justin" # You can make this dynamic if needed
+        winner_name = user_name if result == "Win" else opp_name
+        loser_name = opp_name if result == "Win" else user_name
+
         new_match = Match(
-            date=datetime.strptime(data.date, "%Y-%m-%d").date() if data.date else datetime.now().date(),
+            date=match_dt,
             opponent_name=opp_name,
             opponent_rating=opp_rating,
+            winner_name=winner_name,
+            loser_name=loser_name,
             result=result,
             score_summary=score_summary, # Overall "3-1"
             set_scores=set_scores,       # Detailed "11-9, 9-11"
