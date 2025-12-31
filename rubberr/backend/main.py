@@ -1340,7 +1340,7 @@ async def get_claude_response(user_message: str):
             return "Error: Anthropic API key not found. Please set ANTHROPIC_API_KEY."
 
     # Use the model that we verified works (reverting to original)
-    model = "claude-4-sonnet-20250514" 
+    model = "claude-sonnet-4-5" 
     
     messages = [{"role": "user", "content": user_message}]
     
