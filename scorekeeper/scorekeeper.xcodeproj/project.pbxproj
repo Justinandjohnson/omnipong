@@ -378,9 +378,6 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = "$(PRODUCT_DISPLAY_NAME)";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "We need microphone access to record match scores via voice commands.";
-				INFOPLIST_KEY_NSAppTransportSecurity = {
-					NSAllowsArbitraryLoads = YES;
-				};
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -407,9 +404,6 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = "$(PRODUCT_DISPLAY_NAME)";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "We need microphone access to record match scores via voice commands.";
-				INFOPLIST_KEY_NSAppTransportSecurity = {
-					NSAllowsArbitraryLoads = YES;
-				};
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
