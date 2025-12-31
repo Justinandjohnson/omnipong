@@ -12,6 +12,7 @@ class User(Base):
     dob = Column(Date)
     usatt_id = Column(String)
     stadium_id = Column(String)
+    phone_number = Column(String) # User's personal phone number for SMS reminders
     current_rating = Column(Integer)
     official_rating = Column(Integer)  # USATT Official Rating
     last_updated = Column(DateTime, default=datetime.utcnow)

@@ -13,6 +13,7 @@ import { RefreshCw, MapPin, AlertCircle } from "lucide-react";
 import { useArcade } from "@/context/ArcadeContext";
 import ArcadeScoreInput from "@/components/ArcadeScoreInput";
 import ArcadeMatchList from "@/components/ArcadeMatchList";
+import DrillLab from "@/components/DrillLab";
 
 export default function Home() {
   const { isArcadeMode } = useArcade();
@@ -244,6 +245,10 @@ export default function Home() {
           <div className="col-span-5 flex flex-col gap-6">
             <div>
                 <PracticePartners limit={2} />
+            </div>
+
+            <div>
+                <DrillLab />
             </div>
             
             <div className="flex-1">

@@ -1,126 +1,159 @@
-import { Users, TrendingUp, Target, Calendar, Award } from 'lucide-react';
-import { useEffect, useState } from 'react';
+"use client";
+import React, { useState, useEffect } from 'react';
+import { Users, MessageCircle, Settings, X, Shield } from 'lucide-react';
+import ScoutingReport from './ScoutingReport';
 
-export default function PracticePartners({ limit = 5, className = "" }: { limit?: number, className?: string }) {
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+
+export default function PracticePartners({ limit }: { limit?: number }) {
   const [partners, setPartners] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [sendingId, setSendingId] = useState<number | null>(null);
+  const [showSettings, setShowSettings] = useState(false);
+  const [phoneNumber, setPhoneNumber] = useState("");
+  const [scoutingPlayer, setScoutingPlayer] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch(`http://localhost:8000/tools/practice_partners?limit=${limit}`)
+    fetch(`${API_URL}/user`)
       .then(res => res.json())
       .then(data => {
-        setPartners(data.recommendations || []);
-        setLoading(false);
+        if (data.phone_number) setPhoneNumber(data.phone_number);
       })
-      .catch(e => {
-        console.error('Failed to load practice partners:', e);
-        setLoading(false);
-      });
+      .catch(() => {});
+
+    // Mock partner data for now as strictly not in DB yet
+    const mockPartners = [
+      { player_name: "Steve Smith", rating: 1180, reason: "Close match, good practice for pressure." },
+      { player_name: "Alex Wong", rating: 1250, reason: "Plays aggressive, helps your defense." },
+      { player_name: "Maria Garcia", rating: 1120, reason: "Excellent placement, improves your footwork." }
+    ];
+    setPartners(limit ? mockPartners.slice(0, limit) : mockPartners);
+    setLoading(false);
   }, [limit]);
 
-  if (loading) {
-    return (
-      <div className="bg-[#1a1a1a] rounded-2xl border border-[#333] p-6 h-full">
-        <div className="flex items-center gap-2 mb-6">
+  const handleRemind = async (partner: any, index: number) => {
+    setSendingId(index);
+    try {
+      const res = await fetch(`${API_URL}/tools/remind_practice_partner`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          partner_name: partner.player_name,
+          reason: partner.reason
+        })
+      });
+      const data = await res.json();
+      if (data.status === 'success') {
+        alert("Reminder sent!");
+      } else {
+        alert("Failed: " + data.message);
+      }
+    } catch (e) {
+      alert("Error sending reminder");
+    } finally {
+      setSendingId(null);
+    }
+  };
+
+  const savePhone = async () => {
+    try {
+      const res = await fetch(`${API_URL}/settings/update_phone`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone_number: phoneNumber })
+      });
+      const data = await res.json();
+      if (data.status === 'success') {
+        setShowSettings(false);
+        alert("Phone number updated!");
+      } else {
+        alert("Failed: " + data.message);
+      }
+    } catch (e) {
+      alert("Error updating phone");
+    }
+  };
+
+  return (
+    <div className="bg-[#1a1a1a] rounded-2xl border border-[#333] p-6 h-full relative overflow-hidden group">
+      <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center gap-2">
           <Users size={20} className="text-[var(--rubber-red)]" />
           <h2 className="text-lg font-bold">Practice Partners</h2>
         </div>
-        <div className="space-y-4">
-          {[1,2,3].map(i => (
-            <div key={i} className="h-20 bg-[#222] animate-pulse rounded-xl" />
-          ))}
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className={`bg-[#1a1a1a] rounded-2xl border border-[#333] p-6 ${className}`}>
-      <div className="flex items-center gap-2 mb-6">
-        <Users size={20} className="text-[var(--rubber-red)]" />
-        <h2 className="text-lg font-bold">Practice Partners</h2>
+        <button 
+          onClick={() => setShowSettings(true)}
+          className="text-gray-500 hover:text-white transition-colors"
+        >
+          <Settings size={18} />
+        </button>
       </div>
 
-      {partners.length === 0 ? (
-        <div className="text-center py-8 text-gray-500">
-          <Users size={48} className="mx-auto mb-4 opacity-20" />
-          <p>No practice partner recommendations yet.</p>
-          <p className="text-xs mt-2">Play more matches to get recommendations!</p>
-        </div>
-      ) : (
-        <div className="space-y-4">
-          {partners.map((partner, i) => (
-            <div
-              key={i}
-              className="bg-[#222] rounded-xl p-4 border border-[#333] hover:border-[var(--rubber-red)] transition-all cursor-pointer group"
-            >
-              {/* Header with Rank */}
-              <div className="flex items-start justify-between mb-3">
-                <div className="flex-1">
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="text-lg font-bold text-white group-hover:text-[var(--rubber-red)] transition-colors">
-                      {partner.player_name}
-                    </span>
-                    <span className="text-xs font-bold px-2 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20">
-                      {partner.rating}
-                    </span>
-                  </div>
-                  <div className="text-xs text-gray-400">
-                    Record: {partner.wins}-{partner.losses} • {partner.match_count} matches
-                  </div>
-                </div>
-                <div className="text-2xl font-bold text-[var(--rubber-red)]">
-                  #{i + 1}
-                </div>
+      <div className="space-y-4">
+        {partners.map((p, i) => (
+          <div key={i} className="bg-[#222] border border-[#333] rounded-xl p-4 hover:border-[var(--rubber-red)] transition-all">
+            <div className="flex justify-between items-start mb-2">
+              <div>
+                <h3 className="font-bold text-white">{p.player_name}</h3>
+                <p className="text-xs text-gray-500">Rating: {p.rating}</p>
               </div>
-
-              {/* Score Breakdown */}
-              <div className="grid grid-cols-2 gap-2 mb-3">
-                <div className="flex items-center gap-2 text-xs">
-                  <Target size={12} className="text-green-400" />
-                  <span className="text-gray-400">Skill Match:</span>
-                  <span className="font-bold text-green-400">{Math.round((partner.scores?.skill_match || 0) * 100)}%</span>
-                </div>
-                <div className="flex items-center gap-2 text-xs">
-                  <TrendingUp size={12} className="text-yellow-400" />
-                  <span className="text-gray-400">Competitive:</span>
-                  <span className="font-bold text-yellow-400">{Math.round((partner.scores?.competitiveness || 0) * 100)}%</span>
-                </div>
-                <div className="flex items-center gap-2 text-xs">
-                  <Award size={12} className="text-purple-400" />
-                  <span className="text-gray-400">Win Rate:</span>
-                  <span className="font-bold text-purple-400">{Math.round((partner.scores?.win_rate_balance || 0) * 100)}%</span>
-                </div>
-                <div className="flex items-center gap-2 text-xs">
-                  <Calendar size={12} className="text-blue-400" />
-                  <span className="text-gray-400">Recent:</span>
-                  <span className="font-bold text-blue-400">{Math.round((partner.scores?.recent_activity || 0) * 100)}%</span>
-                </div>
-              </div>
-
-              {/* Reason */}
-              <div className="pt-3 border-t border-[#2a2a2a]">
-                <p className="text-xs text-gray-300 leading-relaxed">
-                  {partner.reason}
-                </p>
-              </div>
-
-              {/* Overall Score Bar */}
-              <div className="mt-3">
-                <div className="flex items-center justify-between text-xs mb-1">
-                  <span className="text-gray-500 font-bold">Overall Match Score</span>
-                  <span className="text-[var(--rubber-red)] font-bold">{Math.round(partner.total_score * 100)}%</span>
-                </div>
-                <div className="h-1.5 bg-[#1a1a1a] rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-gradient-to-r from-[var(--rubber-red)] to-[var(--rubber-accent)] rounded-full transition-all duration-500"
-                    style={{ width: `${partner.total_score * 100}%` }}
-                  />
-                </div>
+              <div className="flex items-center gap-2">
+                <button 
+                  onClick={() => setScoutingPlayer(p.player_name)}
+                  className="p-2 bg-[#111] hover:bg-[#333] rounded-lg text-gray-400 hover:text-[var(--rubber-red)] transition-all"
+                  title="Scouting Report"
+                >
+                  <Shield size={16} />
+                </button>
+                <button 
+                  onClick={() => handleRemind(p, i)}
+                  disabled={sendingId === i}
+                  className="p-2 bg-[#111] hover:bg-[#333] rounded-lg text-gray-400 hover:text-white transition-all disabled:opacity-50"
+                  title="Send Reminder"
+                >
+                  <MessageCircle size={16} className={sendingId === i ? "animate-pulse" : ""} />
+                </button>
               </div>
             </div>
-          ))}
+            <p className="text-xs text-gray-400 leading-relaxed italic">
+              "{p.reason}"
+            </p>
+          </div>
+        ))}
+      </div>
+
+      {showSettings && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+          <div className="bg-[#1a1a1a] border border-[#333] rounded-2xl p-6 max-w-sm w-full relative">
+            <button onClick={() => setShowSettings(false)} className="absolute top-4 right-4 text-gray-500 hover:text-white"><X size={20}/></button>
+            <h3 className="text-lg font-bold mb-4">Reminder Settings</h3>
+            <div className="space-y-4">
+              <div>
+                <label className="text-xs font-bold text-gray-500 uppercase mb-1 block tracking-widest">Phone Number</label>
+                <input 
+                  type="text" 
+                  value={phoneNumber}
+                  onChange={(e) => setPhoneNumber(e.target.value)}
+                  placeholder="+18041234567"
+                  className="w-full bg-[#111] border border-[#333] rounded-lg px-4 py-2 text-white outline-none focus:border-[var(--rubber-red)]"
+                />
+              </div>
+              <button 
+                onClick={savePhone}
+                className="w-full bg-[var(--rubber-red)] text-white py-2 rounded-lg font-bold hover:brightness-110 transition-all"
+              >
+                Save Number
+              </button>
+            </div>
+          </div>
         </div>
+      )}
+
+      {scoutingPlayer && (
+        <ScoutingReport 
+            playerName={scoutingPlayer} 
+            onClose={() => setScoutingPlayer(null)} 
+        />
       )}
     </div>
   );

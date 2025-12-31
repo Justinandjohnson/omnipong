@@ -78,7 +78,7 @@ def get_user():
     session = SessionLocal()
     try:
         # Fetch the main user (Justin)
-        result = session.execute(text("SELECT name as full_name, current_rating as rating, usatt_id as usatt_number FROM users LIMIT 1"))
+        result = session.execute(text("SELECT name as full_name, current_rating as rating, usatt_id as usatt_number, phone_number FROM users LIMIT 1"))
         user = result.fetchone()
         
         if user:
@@ -98,7 +98,7 @@ def get_matches(source: str = None):
     session = SessionLocal()
     try:
         # Build Query
-        query = "SELECT date, opponent_name, opponent_rating, score_summary, result, source, set_scores FROM matches"
+        query = "SELECT id, date, opponent_name, opponent_rating, score_summary, result, source, set_scores FROM matches"
         params = {}
         
         if source:
@@ -161,11 +161,24 @@ def get_matches(source: str = None):
                             m['is_choke'] = True
                             
                 except Exception:
-                    pass
+                    m['is_win'] = is_win
             
             matches.append(m)
             
         return matches
+    except Exception as e:
+        print(f"Match fetch error: {e}")
+        return []
+    finally:
+        session.close()
+
+@app.delete("/matches/{match_id}")
+def delete_match(match_id: int):
+    session = SessionLocal()
+    try:
+        session.execute(text("DELETE FROM matches WHERE id = :id"), {"id": match_id})
+        session.commit()
+        return {"status": "success", "message": "Match deleted"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     finally:
@@ -733,53 +746,65 @@ async def arcade_transcribe(file: UploadFile = File(...)):
 async def twilio_webhook(request: Request):
     """
     Handles incoming SMS/Voice from Twilio.
+    ROUTES based on intent classification: Match Report vs General Query.
     """
     form_data = await request.form()
     body = form_data.get("Body", "") # SMS Text
-    # For now, simplistic SMS handling
     
     if body:
         try:
-            # AI Parse
+            # 1. AI Parse & Classify
             parsed = await parse_match_intent(body)
-            intent = parsed.get("intent")
+            intent = parsed.get("intent") # Now contains message_type
             
-            # Check if we have enough info to save
-            if intent and intent.get("opponent_name") and intent.get("user_score") is not None:
-                session = SessionLocal()
-                try:
-                    # Calculate Result/Summary
-                    u_score = intent["user_score"]
-                    o_score = intent["opponent_score"]
-                    result = "Win" if u_score > o_score else "Loss"
-                    score_summary = f"{u_score}-{o_score}"
-                    set_scores = intent.get("set_scores", "")
-                    
-                    # Save
-                    save_arcade_match(
-                        session, 
-                        intent["opponent_name"], 
-                        result, 
-                        score_summary, 
-                        set_scores
-                    )
-                    
-                    # Reply with success
-                    xml_content = f"<?xml version=\"1.0\" encoding=\"UTF-8\"?><Response><Message>Match Saved! {parsed['confirmation_message']}</Message></Response>"
-                    return Response(content=xml_content, media_type="application/xml")
-                except Exception as e:
-                    print(f"Twilio Save Error: {e}")
-                    xml_error = f"<?xml version=\"1.0\" encoding=\"UTF-8\"?><Response><Message>Error saving match: {str(e)}</Message></Response>"
-                    return Response(content=xml_error, media_type="application/xml")
-                finally:
-                    session.close()
+            # 2. ROUTING LOGIC
+            message_type = intent.get("message_type", "query")
             
-            # If missing info, just reply with what we understood
-            xml_missing = f"<?xml version=\"1.0\" encoding=\"UTF-8\"?><Response><Message>{parsed.get('confirmation_message', 'Processing...')}</Message></Response>"
-            return Response(content=xml_missing, media_type="application/xml")
+            if message_type == "match_report":
+                # --- MATCH REPORT FLOW ---
+                if intent.get("opponent_name") and intent.get("user_score") is not None:
+                    session = SessionLocal()
+                    try:
+                        u_score = intent["user_score"]
+                        o_score = intent["opponent_score"]
+                        result = "Win" if u_score > o_score else "Loss"
+                        score_summary = f"{u_score}-{o_score}"
+                        set_scores = intent.get("set_scores", "")
+                        
+                        save_arcade_match(
+                            session, 
+                            intent["opponent_name"], 
+                            result, 
+                            score_summary, 
+                            set_scores
+                        )
+                        
+                        xml_content = f"<?xml version=\"1.0\" encoding=\"UTF-8\"?><Response><Message>Match Saved! {parsed['confirmation_message']}</Message></Response>"
+                        return Response(content=xml_content, media_type="application/xml")
+                    except Exception as e:
+                        print(f"Twilio Save Error: {e}")
+                        xml_error = f"<?xml version=\"1.0\" encoding=\"UTF-8\"?><Response><Message>Error saving match: {str(e)}</Message></Response>"
+                        return Response(content=xml_error, media_type="application/xml")
+                    finally:
+                        session.close()
+                else:
+                    # Match report but missing info
+                    xml_missing = f"<?xml version=\"1.0\" encoding=\"UTF-8\"?><Response><Message>{parsed.get('confirmation_message', 'I need more details to save the match.')}</Message></Response>"
+                    return Response(content=xml_missing, media_type="application/xml")
+            
+            else:
+                # --- GENERAL QUERY FLOW (Hand off to Claude) ---
+                # "Is Steve better than me?" -> "message_type": "query"
+                print(f"Routing to Claude: {body}")
+                claude_reply = await get_claude_response(body)
+                
+                # Twilio SMS max length is 1600 chars, usually splits. Claude can be verbose.
+                # Just send it.
+                xml_reply = f"<?xml version=\"1.0\" encoding=\"UTF-8\"?><Response><Message>{claude_reply}</Message></Response>"
+                return Response(content=xml_reply, media_type="application/xml")
             
         except Exception as e:
-            xml_fail = f"<?xml version=\"1.0\" encoding=\"UTF-8\"?><Response><Message>Sorry, I couldn't understand that. Error: {str(e)}</Message></Response>"
+            xml_fail = f"<?xml version=\"1.0\" encoding=\"UTF-8\"?><Response><Message>I'm having trouble understanding. Error: {str(e)}</Message></Response>"
             return Response(content=xml_fail, media_type="application/xml")
     
     return Response(content="OK", media_type="text/plain")
@@ -1291,16 +1316,24 @@ CLAUDE_TOOLS = [
     }
 ]
 
-@app.post("/chat")
-async def chat_endpoint(msg: ChatMessage):
+async def get_claude_response(user_message: str):
+    """
+    Reusable logic to get a response from Claude 4 with tools.
+    Used by /chat endpoint AND SMS webhook.
+    """
     client = get_anthropic_client()
     if not client:
-        return {"response": "Error: Anthropic API key not found. Please set it in ~/.anthropic/api_key"}
+        # Fallback to env var if file not found (Render support)
+        api_key = os.getenv("ANTHROPIC_API_KEY")
+        if api_key:
+            client = anthropic.Anthropic(api_key=api_key)
+        else:
+            return "Error: Anthropic API key not found. Please set ANTHROPIC_API_KEY."
 
-    # Use the model that we verified works
-    model = "claude-4-sonnet-20250514"
+    # Use the model that we verified works (reverting to original)
+    model = "claude-4-sonnet-20250514" 
     
-    messages = [{"role": "user", "content": msg.message}]
+    messages = [{"role": "user", "content": user_message}]
     
     try:
         # Initial call to Claude
@@ -1316,8 +1349,6 @@ async def chat_endpoint(msg: ChatMessage):
         while response.stop_reason == "tool_use":
             tool_results = []
             
-            # Add Claude's response (containing tool calls) to history
-            # In latest anthropic SDK, we need to pass the message with its tool_use blocks
             messages.append({"role": "assistant", "content": response.content})
             
             for content_block in response.content:
@@ -1330,27 +1361,35 @@ async def chat_endpoint(msg: ChatMessage):
                     
                     # Tool Execution
                     result = {}
-                    if tool_name == "get_context":
-                        result = get_agent_context()
-                    elif tool_name == "get_stats":
-                        result = get_stats(source=tool_input.get("source", "usatt"))
-                    elif tool_name == "query_matches":
-                        result = tool_query_matches(**tool_input)
-                    elif tool_name == "get_performance_analysis":
-                        result = get_tool_analysis()
-                    elif tool_name == "search_players":
-                        result = tool_search_players(**tool_input)
-                    elif tool_name == "omnipong_player_search":
-                        result = await browser_manager.search_omnipong_player(tool_input.get("player_name"))
-                    elif tool_name == "omnipong_league_sync":
-                        result = await tool_sync_league_players()
-                    elif tool_name == "get_practice_partners":
-                        result = get_practice_partners(limit=tool_input.get("limit", 5))
-                    elif tool_name == "get_tournament_intelligence":
-                        result = get_tournament_intelligence(
-                            tournament_title=tool_input.get("tournament_title"),
-                            limit=tool_input.get("limit", 5)
-                        )
+                    try:
+                        if tool_name == "get_context":
+                            result = get_agent_context()
+                        elif tool_name == "get_stats":
+                            result = get_stats(source=tool_input.get("source", "usatt"))
+                        elif tool_name == "query_matches":
+                            result = tool_query_matches(**tool_input)
+                        elif tool_name == "get_performance_analysis":
+                            result = get_tool_analysis()
+                        elif tool_name == "search_players":
+                            result = tool_search_players(PlayerSearch(**tool_input)) # Fix: wrap in Pydantic? 
+                            # Actually tool_search_players takes PlayerSearch object.
+                            # But tool_input is a dict.
+                            # We need to construct it: tool_search_players(PlayerSearch(name=tool_input['name']))
+                            # Let's check definition. It expects `req: PlayerSearch`.
+                            result = tool_search_players(PlayerSearch(**tool_input))
+                        elif tool_name == "omnipong_player_search":
+                            result = await browser_manager.search_omnipong_player(tool_input.get("player_name"))
+                        elif tool_name == "omnipong_league_sync":
+                            result = await tool_sync_league_players()
+                        elif tool_name == "get_practice_partners":
+                            result = get_practice_partners(limit=tool_input.get("limit", 5))
+                        elif tool_name == "get_tournament_intelligence":
+                            result = get_tournament_intelligence(
+                                tournament_title=tool_input.get("tournament_title"),
+                                limit=tool_input.get("limit", 5)
+                            )
+                    except Exception as tool_err:
+                        result = {"error": str(tool_err)}
 
                     tool_results.append({
                         "role": "user",
@@ -1358,7 +1397,7 @@ async def chat_endpoint(msg: ChatMessage):
                             {
                                 "type": "tool_result",
                                 "tool_use_id": tool_id,
-                                "content": json.dumps(result)
+                                "content": json.dumps(result, default=str)
                             }
                         ]
                     })
@@ -1379,14 +1418,273 @@ async def chat_endpoint(msg: ChatMessage):
             if block.type == "text":
                 final_text += block.text
                 
-        return {"response": final_text}
+        return final_text
 
     except Exception as e:
         print(f"Chat API Error: {e}")
-        return {"response": f"Coach Rubberr is having some brain fog (API Error: {str(e)}). Please try again!"}
+        return f"Coach Rubberr is having some brain fog (API Error: {str(e)}). Please try again!"
+
+@app.post("/chat")
+async def chat_endpoint(msg: ChatMessage):
+    # Wrapper for the new reusable function
+    response_text = await get_claude_response(msg.message)
+    return {"response": response_text}
+
+
+
+
+
+class PracticeReminder(BaseModel):
+    partner_name: str
+    reason: str = None
+
+@app.post("/tools/remind_practice_partner")
+def remind_practice_partner(reminder: PracticeReminder):
+    """
+    Send an SMS reminder to the user to practice with a specific partner.
+    """
+    session = SessionLocal()
+    try:
+        # 1. Get User Phone Number
+        # Try DB first
+        user = session.execute(text("SELECT * FROM users LIMIT 1")).fetchone()
+        target_phone = None
+        
+        if user:
+            # Check if phone col exists (it might not if migration failed/didn't run yet)
+            # Safe access via dictionary
+            u_dict = dict(user._mapping)
+            target_phone = u_dict.get('phone_number')
+            
+        # Fallback to Env
+        if not target_phone:
+            target_phone = os.getenv("USER_PHONE_NUMBER")
+            
+        if not target_phone:
+             return {"status": "error", "message": "No user phone number found. Please set USER_PHONE_NUMBER in .env or update settings."}
+
+        # 2. Construct Message
+        msg_body = f"🏓 Coach Rubberr Reminder: You should practice with {reminder.partner_name}!"
+        if reminder.reason:
+            msg_body += f"\n\nContext: {reminder.reason}"
+            
+        # 3. Send SMS via Twilio
+        account_sid = os.environ.get('TWILIO_ACCOUNT_SID')
+        auth_token = os.environ.get('TWILIO_AUTH_TOKEN')
+        api_key = os.environ.get('TWILIO_API_KEY_SID')
+        api_secret = os.environ.get('TWILIO_API_KEY_SECRET')
+        from_phone = os.environ.get('TWILIO_PHONE_NUMBER')
+        
+        if not from_phone:
+             return {"status": "error", "message": "Twilio phone number missing"}
+             
+        from twilio.rest import Client
+        
+        if api_key and api_secret and account_sid:
+            client = Client(api_key, api_secret, account_sid)
+        elif auth_token and account_sid:
+            client = Client(account_sid, auth_token)
+        else:
+             return {"status": "error", "message": "Twilio credentials missing"}
+        
+        message = client.messages.create(
+            body=msg_body,
+            from_=from_phone,
+            to=target_phone
+        )
+        
+        return {"status": "success", "sid": message.sid, "message": f"Reminder sent to {target_phone}"}
+
+    except Exception as e:
+        print(f"Reminder Error: {e}")
+        return {"status": "error", "message": str(e)}
+    finally:
+        session.close()
+
+class PhoneUpdate(BaseModel):
+    phone_number: str
+
+@app.post("/settings/update_phone")
+def update_phone(data: PhoneUpdate):
+    """Update the user's phone number in the database."""
+    session = SessionLocal()
+    try:
+        # Check if user exists
+        user_check = session.execute(text("SELECT id FROM users LIMIT 1")).fetchone()
+        
+        if user_check:
+            # Update
+            session.execute(text("UPDATE users SET phone_number = :p"), {"p": data.phone_number})
+        else:
+            # Create dummy user if needed? Should exist.
+            # Assuming 'Justin' exists from migration.
+            pass
+            
+        session.commit()
+        return {"status": "success", "message": "Phone number updated"}
+    except Exception as e:
+        # If column doesn't exist, this might fail.
+        # We might need to alter table here if we really want to be robust, but strict schema usually managed outside.
+        # Let's try to catch "no such column" and auto-migrate?
+        if "no such column" in str(e).lower():
+            try:
+                session.rollback()
+                session.execute(text("ALTER TABLE users ADD COLUMN phone_number TEXT"))
+                session.commit()
+                # Retry update
+                session.execute(text("UPDATE users SET phone_number = :p"), {"p": data.phone_number})
+                session.commit()
+                return {"status": "success", "message": "Phone number updated (column created)"}
+            except Exception as migrate_err:
+                return {"status": "error", "message": f"Migration failed: {migrate_err}"}
+                
+        return {"status": "error", "message": str(e)}
+    finally:
+        session.close()
+
+@app.get("/players/{player_name}/scouting")
+async def get_player_scouting(player_name: str):
+    """
+    Generate an AI scouting report for a specific opponent based on match history.
+    """
+    session = SessionLocal()
+    try:
+        # 1. Fetch all matches against this opponent
+        query = text("""
+            SELECT date, winner_name, loser_name, result, score_summary, set_scores, source 
+            FROM matches 
+            WHERE opponent_name = :name
+            ORDER BY date DESC
+        """)
+        result = session.execute(query, {"name": player_name})
+        matches = [dict(row._mapping) for row in result]
+        
+        if not matches:
+            return {"status": "error", "message": f"No match history found for {player_name}"}
+
+        # 2. Extract basic stats
+        wins = sum(1 for m in matches if m['winner_name'] == 'Justin Johnson' or m['result'] == 'Win' or m['result'] == 'W')
+        losses = len(matches) - wins
+        
+        # 3. Request AI Analysis
+        match_summary = "\n".join([
+            f"- {m['date']}: {m['result']} ({m['score_summary']}) Sets: {m['set_scores']}" 
+            for m in matches
+        ])
+        
+        prompt = f"""
+        You are a Table Tennis Scout. Analyze the following match history for 'Justin Johnson' against '{player_name}'.
+        
+        MATCH HISTORY:
+        {match_summary}
+        
+        TASK:
+        1. Identify the opponent's likely style based on the results and scores (e.g., blocker, attacker, chopper).
+        2. Highlight Justin's vulnerabilities in these matches (e.g., "loses long rallies", "struggles in deciding sets").
+        3. Provide 3 specific tactical "Keys to Victory" for the next match.
+        4. Keep it concise, strategic, and professional.
+        """
+        
+        scouting_report = await get_claude_response(prompt)
+        
+        return {
+            "player_name": player_name,
+            "stats": {
+                "total_matches": len(matches),
+                "record": f"{wins}-{losses}",
+                "win_rate": f"{round(wins/len(matches)*100)}%" if matches else "0%"
+            },
+            "analysis": scouting_report
+        }
+
+    except Exception as e:
+        print(f"Scouting Error: {e}")
+        return {"status": "error", "message": str(e)}
+    finally:
+        session.close()
+
+@app.get("/training/recommendations")
+async def get_training_recommendations():
+    """
+    Analyze global match history to suggest training focus areas and drills.
+    """
+    session = SessionLocal()
+    try:
+        # 1. Fetch stats for all matches
+        # We'll use a simplified version of the logic inside /stats
+        query = text("SELECT result, set_scores FROM matches")
+        matches = session.execute(query).fetchall()
+        
+        total = len(matches)
+        if total == 0:
+            return {"status": "error", "message": "No match data available for analysis."}
+            
+        comebacks = 0
+        chokes = 0
+        close_sets_won = 0
+        close_sets_swung = 0
+        
+        for m in matches:
+            res_str = m[0]
+            sets_str = m[1]
+            is_win = (res_str == 'Win' or res_str == 'W' or (res_str and '-' in res_str and int(res_str.split('-')[0]) > int(res_str.split('-')[1])))
+            
+            if sets_str:
+                try:
+                    set_list = [s.strip() for s in sets_str.split(',')]
+                    parsed_sets = []
+                    for s in set_list:
+                        if '-' in s:
+                            sp1, sp2 = map(int, s.split('-'))
+                            parsed_sets.append((sp1, sp2))
+                            if abs(sp1 - sp2) <= 2:
+                                close_sets_swung += 1
+                                if sp1 > sp2: close_sets_won += 1
+                    
+                    if len(parsed_sets) > 0:
+                        s1_user, s1_opp = parsed_sets[0]
+                        won_first_set = s1_user > s1_opp
+                        if not won_first_set and is_win: comebacks += 1
+                        elif won_first_set and not is_win: chokes += 1
+                except: pass
+
+        # 2. Construct prompt for training advice
+        prompt = f"""
+        You are Coach Rubberr, a world-class table tennis coach.
+        Analyze Justin's recent performance patterns across {total} matches and suggest a training plan.
+        
+        PATTERNS:
+        - Comebacks (Won after losing Set 1): {comebacks}
+        - Chokes (Lost after winning Set 1): {chokes}
+        - Close Set Win Rate (sets decided by 2 pts): {round(close_sets_won / close_sets_swung * 100) if close_sets_swung > 0 else 0}%
+        
+        TASK:
+        1. Identify the #1 psychological or physical weakness (e.g., "Pressure handling", "Slow starts").
+        2. Recommend 2 specific drills (provide drill names and brief descriptions) to address these.
+        3. Provide a motivational "Coach's Note."
+        4. Keep it short, authoritative, and impactful.
+        """
+        
+        advice = await get_claude_response(prompt)
+        
+        return {
+            "total_matches": total,
+            "patterns": {
+                "comebacks": comebacks,
+                "chokes": chokes,
+                "clutch_percent": round(close_sets_won / close_sets_swung * 100) if close_sets_swung > 0 else 0
+            },
+            "coach_advice": advice
+        }
+        
+    except Exception as e:
+        print(f"Training Error: {e}")
+        return {"status": "error", "message": str(e)}
+    finally:
+        session.close()
 
 if __name__ == "__main__":
+
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
-
 
