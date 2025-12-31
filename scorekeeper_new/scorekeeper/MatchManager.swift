@@ -38,9 +38,18 @@ class MatchManager: NSObject, ObservableObject, AVAudioRecorderDelegate {
         do {
             try recordingSession.setCategory(.playAndRecord, mode: .default)
             try recordingSession.setActive(true)
-            recordingSession.requestRecordPermission { allowed in
-                if !allowed {
-                    print("Microphone access denied")
+            
+            if #available(iOS 17.0, *) {
+                AVAudioApplication.requestRecordPermission { allowed in
+                    if !allowed {
+                        print("Microphone access denied")
+                    }
+                }
+            } else {
+                recordingSession.requestRecordPermission { allowed in
+                    if !allowed {
+                        print("Microphone access denied")
+                    }
                 }
             }
         } catch {
