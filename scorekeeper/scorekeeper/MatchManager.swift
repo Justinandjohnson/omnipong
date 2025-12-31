@@ -250,6 +250,7 @@ class MatchManager: NSObject, ObservableObject, AVAudioRecorderDelegate {
         }
         
         let targetURL = URL(string: "\(baseURL)/arcade/transcribe")!
+        print("🚀 Sending audio to backend: \(targetURL)")
         var request = URLRequest(url: targetURL)
         request.httpMethod = "POST"
         
@@ -272,18 +273,38 @@ class MatchManager: NSObject, ObservableObject, AVAudioRecorderDelegate {
                     self?.lastTranscript = "Network error: \(error.localizedDescription)"
                     return
                 }
-                guard let data = data else { return }
-                self?.processBackendResponse(data)
+                
+                if let data = data {
+                    if let rawResponse = String(data: data, encoding: .utf8) {
+                        print("📡 Raw Response: \(rawResponse)")
+                    }
+                    self?.processBackendResponse(data)
+                }
             }
         }.resume()
     }
     
     private func processBackendResponse(_ data: Data) {
-        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let status = json["status"] as? String, status == "success",
-              let transcript = json["transcript"] as? String,
-              let intent = json["intent"] as? [String: Any] else {
+        let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        
+        guard let response = json,
+              let status = response["status"] as? String, status == "success",
+              let transcript = response["transcript"] as? String,
+              let intent = response["intent"] as? [String: Any] else {
+            
             print("❌ Failed to parse backend response")
+            if let response = json {
+                if let error = response["error"] as? String {
+                    print("🛑 Server Error: \(error)")
+                    self.lastTranscript = "Server Error: \(error)"
+                } else {
+                    print("⚠️ Response Keys: \(response.keys)")
+                    self.lastTranscript = "Invalid Backend Response"
+                }
+            } else if let raw = String(data: data, encoding: .utf8) {
+                print("📄 Raw non-JSON output: \(raw)")
+                self.lastTranscript = "Backend error (not JSON)"
+            }
             return
         }
 
