@@ -387,11 +387,23 @@ class MatchManager: NSObject, ObservableObject, AVAudioRecorderDelegate {
             "date": ISO8601DateFormatter().string(from: Date()).prefix(10)
         ]
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
-        URLSession.shared.dataTask(with: request) { data, response, error in
-            if let error = error { 
-                print("❌ Save failed: \(error.localizedDescription)")
-            } else {
-                print("✅ Match saved successfully to backend/AI agent")
+        URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
+            DispatchQueue.main.async {
+                if let error = error { 
+                    print("❌ Save failed: \(error.localizedDescription)")
+                } else if let data = data {
+                    if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                       let status = json["status"] as? String, status == "success" {
+                        print("✅ Match saved successfully to backend/AI agent")
+                        if let confirm = json["confirmation"] as? String, !confirm.isEmpty {
+                            withAnimation {
+                                self?.lastTranscript = "🤖 \(confirm)"
+                            }
+                        }
+                    } else {
+                        print("⚠️ Backend reached but save failed or format unexpected")
+                    }
+                }
             }
         }.resume()
     }
