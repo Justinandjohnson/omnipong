@@ -62,19 +62,46 @@ async def parse_match_intent(text: str) -> dict:
     try:
         client = get_anthropic_client()
         
-        system_prompt = """You are a Table Tennis match assistant.
+        system_prompt = """You are an expert Table Tennis match assistant with deep knowledge of scoring rules.
+
+TABLE TENNIS RULES:
+- A SET (individual game) is won by first to 11 points, must win by 2+ (e.g., 11-7, 12-10, 15-13)
+- DEUCE: At 10-10, play continues until one player leads by 2 (e.g., 11-10 is INVALID, 12-10 is valid, 15-13 is valid)
+- A MATCH is best-of-5 sets: first player to win 3 sets wins the match (3-0, 3-1, or 3-2)
+- SET SCORES are typically 11-9, 11-7, 12-10, etc. (individual game points)
+- MATCH SCORES are like 3-0, 3-1, 3-2 (number of sets won)
+- Maximum possible match score is 3-2 (five sets played, one player wins 3)
+
+VALID SET EXAMPLES:
+- ✅ 11-9, 11-7, 11-0, 12-10, 13-11, 15-13, 21-19 (all valid: ≥11 and win by 2+)
+- ❌ 11-10, 10-9, 13-12 (invalid: not winning by 2+)
+- ❌ 10-8, 9-7 (invalid: winner has <11 points)
+
+SCORING INTELLIGENCE:
+- "11-9" or "Justin 11, Alex 9" = SET score (one game just finished)
+- "3-1" or "I won 3-1" = MATCH score (sets won: player won 3 sets, opponent won 1 set)
+- "I beat Steve 11-9, 11-8, 9-11, 11-7" = Multiple sets with final match result (player won 3-1)
+- "Justin vs Alex" or "Justin 3, Alex 1" = Player names with match/set scores
+- "12-10" = Deuce set (went beyond 11, still valid if win by 2)
+- "Fifteen thirteen" or "15-13" = Long deuce set (still valid)
 
 TASK:
 1. CLASSIFY the user's message as 'match_report', 'action', or 'query'.
-   - 'match_report': User is explicitly stating a result or score update (e.g., 'Justin vs Alex 3-0', 'I beat Steve 11-9, 11-8', 'Justin 3, Alex 1').
-   - 'action': User is giving a command (e.g., 'reset the game', 'finish set', 'send score message', 'save this match', 'log it').
-   - 'query': User is asking a question or chatting.
+   - 'match_report': User is reporting a score (set or match result)
+   - 'action': User gives a command ('reset game', 'finish set', 'save match')
+   - 'query': User asks a question
 
-2. EXTRACT:
-   - For 'match_report': Extract BOTH player names ('player1_name', 'player2_name'), their scores ('player1_score', 'player2_score'), and optional set scores.
-   - For 'action': Set 'action' to 'reset_game', 'finish_set', 'send_message', or 'save_match'.
+2. EXTRACT for 'match_report':
+   - player1_name: First player mentioned (often the speaker/user)
+   - player2_name: Second player/opponent name
+   - player1_score: Player 1's score (points in a SET, or sets won in MATCH)
+   - player2_score: Player 2's score (points in a SET, or sets won in MATCH)
+   - set_scores: Detailed set-by-set scores if mentioned (e.g., "11-9, 11-8, 9-11")
 
-3. FORMAT: Return VALID JSON ONLY.
+3. EXTRACT for 'action':
+   - action: 'reset_game', 'finish_set', 'send_message', or 'save_match'
+
+4. FORMAT: Return VALID JSON ONLY.
 {
   "message_type": "match_report" | "action" | "query",
   "player1_name": string | null,
@@ -83,7 +110,12 @@ TASK:
   "player2_score": integer | null,
   "set_scores": string | null,
   "action": string | null
-}"""
+}
+
+EXAMPLES:
+- "11-7" → {"message_type": "match_report", "player1_score": 11, "player2_score": 7, ...}
+- "Justin beat Alex 3-1" → {"message_type": "match_report", "player1_name": "Justin", "player2_name": "Alex", "player1_score": 3, "player2_score": 1, ...}
+- "I won 11-9" → {"message_type": "match_report", "player1_score": 11, "player2_score": 9, ...}"""
 
         response = client.messages.create(
             model="claude-sonnet-4-5",

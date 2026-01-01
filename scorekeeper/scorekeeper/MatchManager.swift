@@ -166,8 +166,9 @@ class MatchManager: NSObject, ObservableObject, AVAudioRecorderDelegate {
 
         guard var match = currentMatch else { return }
 
-        if player1Name != "Player 1" { match.player1Name = player1Name }
-        if player2Name != "Player 2" { match.player2Name = player2Name }
+        // Always update match with current player names
+        match.player1Name = player1Name
+        match.player2Name = player2Name
 
         let setRecord = SetRecord(
             setNumber: match.currentSetNumber,
@@ -328,11 +329,17 @@ class MatchManager: NSObject, ObservableObject, AVAudioRecorderDelegate {
                     self.player2Name = p2Name
                 }
 
-                // Update scores
+                // Update scores and auto-record if valid set
                 if let score1 = intent["player1_score"] as? Int,
                    let score2 = intent["player2_score"] as? Int {
                     self.player1Score = score1
                     self.player2Score = score2
+
+                    // Auto-record set if it's a valid completed set (11+ and win by 2+)
+                    if MatchManager.isValidSetScore(score1: score1, score2: score2) {
+                        print("✅ Auto-recording valid set: \(score1)-\(score2)")
+                        self.recordSet(player1Score: score1, player2Score: score2)
+                    }
                 }
             } else if messageType == "action" {
                 if let action = intent["action"] as? String {
@@ -386,9 +393,10 @@ class MatchManager: NSObject, ObservableObject, AVAudioRecorderDelegate {
         
         // Send a rich transcript so the backend AI can parse it accurately
         let transcript = generateMessageBody()
-        
+
         let body: [String: Any] = [
-            "opponent_name": player2Name,
+            "player1_name": player1Name,
+            "player2_name": player2Name,
             "manual_score": "\(player1Sets)-\(player2Sets)", // Send sets won, not current points
             "transcript": transcript,
             "date": ISO8601DateFormatter().string(from: Date())

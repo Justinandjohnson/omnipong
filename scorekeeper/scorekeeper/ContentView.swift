@@ -124,19 +124,24 @@ struct ContentView: View {
 
                     // Scores Container
                     HStack(spacing: 16) {
+                        // Show match score (sets won) when between sets, otherwise show current set score
+                        let setInProgress = manager.player1Score > 0 || manager.player2Score > 0
+                        let displayScore1 = setInProgress ? manager.player1Score : manager.player1Sets
+                        let displayScore2 = setInProgress ? manager.player2Score : manager.player2Sets
+
                         PlayerCardView(
                             name: manager.player1Name,
-                            score: manager.player1Score,
+                            score: displayScore1,
                             setsWon: manager.player1Sets,
-                            isLeading: manager.player1Score > manager.player2Score,
+                            isLeading: displayScore1 > displayScore2,
                             playerSide: .player1,
                             sets: manager.currentMatch?.sets ?? []
                         )
                         PlayerCardView(
                             name: manager.player2Name,
-                            score: manager.player2Score,
+                            score: displayScore2,
                             setsWon: manager.player2Sets,
-                            isLeading: manager.player2Score > manager.player1Score,
+                            isLeading: displayScore2 > displayScore1,
                             playerSide: .player2,
                             sets: manager.currentMatch?.sets ?? []
                         )
@@ -315,8 +320,11 @@ struct PlayerCardView: View {
                         if index < sets.count {
                             let set = sets[index]
                             let won = set.winner == playerSide
+                            // Show score from player's perspective (their score first)
+                            let myScore = playerSide == .player1 ? set.player1Score : set.player2Score
+                            let theirScore = playerSide == .player1 ? set.player2Score : set.player1Score
                             Circle().fill(won ? Color.green : Color.red).frame(width: 12, height: 12)
-                            Text("\(set.player1Score)-\(set.player2Score)")
+                            Text("\(myScore)-\(theirScore)")
                                 .font(.system(size: 11, weight: .bold, design: .rounded))
                                 .foregroundColor(won ? .green : .red)
                         } else {

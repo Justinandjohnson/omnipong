@@ -15,9 +15,10 @@ export default function ArcadeScoreInput({ onScoreSubmit }: { onScoreSubmit: () 
   
   // State for parsed preview
   const [parsedIntent, setParsedIntent] = useState<{
-      opponent_name?: string, 
-      user_score?: number, 
-      opponent_score?: number,
+      player1_name?: string,
+      player2_name?: string,
+      player1_score?: number,
+      player2_score?: number,
       summary?: string
   } | null>(null);
 
@@ -36,7 +37,8 @@ export default function ArcadeScoreInput({ onScoreSubmit }: { onScoreSubmit: () 
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          opponent_name: opponent,
+          player1_name: "Justin",  // Current user
+          player2_name: opponent,
           manual_score: input
         })
       });
@@ -149,20 +151,21 @@ export default function ArcadeScoreInput({ onScoreSubmit }: { onScoreSubmit: () 
           if (data.status === "success" && data.intent) {
               // Auto-fill from AI Intent
               if (data.intent) {
-                  const { opponent_name, user_score, opponent_score } = data.intent;
-                  
-                  if (opponent_name) {
-                      setOpponent(opponent_name);
-                      handlePlayerSearch(opponent_name);
+                  const { player1_name, player2_name, player1_score, player2_score } = data.intent;
+
+                  if (player2_name) {
+                      setOpponent(player2_name);
+                      handlePlayerSearch(player2_name);
                   }
-                  
+
                   // Set Preview
-                  if (user_score !== undefined && opponent_score !== undefined) {
+                  if (player1_score !== undefined && player2_score !== undefined) {
                       setParsedIntent({
-                          opponent_name: opponent_name || "Opponent",
-                          user_score,
-                          opponent_score,
-                          summary: `${user_score} - ${opponent_score}`
+                          player1_name: player1_name || "Justin",
+                          player2_name: player2_name || "Opponent",
+                          player1_score,
+                          player2_score,
+                          summary: `${player1_score} - ${player2_score}`
                       });
                   }
               }
@@ -271,7 +274,7 @@ export default function ArcadeScoreInput({ onScoreSubmit }: { onScoreSubmit: () 
                                 <div className="flex flex-col">
                                     <span className="text-xs text-purple-400 font-bold uppercase">Match Preview</span>
                                     <span className="text-sm text-white font-mono">
-                                        Justin vs {parsedIntent.opponent_name} ({parsedIntent.summary})
+                                        {parsedIntent.player1_name} vs {parsedIntent.player2_name} ({parsedIntent.summary})
                                     </span>
                                 </div>
                                 <button 

@@ -826,7 +826,10 @@ async def twilio_webhook(request: Request):
 class ArcadeScoreSubmission(BaseModel):
     transcript: str = None
     manual_score: str = None
-    opponent_name: str
+    # Support both old and new field names
+    opponent_name: str = None  # Old field (for backward compatibility)
+    player1_name: str = None   # New field
+    player2_name: str = None   # New field
     date: str = None # YYYY-MM-DD
 
 @app.post("/arcade/lookup_player")
@@ -919,11 +922,21 @@ async def arcade_submit_score(data: ArcadeScoreSubmission):
 
         # 2. Save Match to DB
         from models import Match, Player
-        
-        # Find/Create Player
-        opp_name = data.opponent_name
+
+        # Support both old and new field names - fully dynamic, no hardcoded names
+        user_name = data.player1_name or "User"  # Default to generic if not provided
+        opp_name = data.player2_name or data.opponent_name  # Prefer new field, fallback to old
+
+        if not opp_name:
+            return {"status": "error", "message": "Missing opponent/player2 name"}
+
+        # If only opponent provided (legacy), infer user_name from AI intent if available
+        if user_name == "User" and raw_input:
+            if intent.get("player1_name"):
+                user_name = intent["player1_name"]
+
         opp_rating = 1200 # Default
-        
+
         # Try to find existing rating
         existing_opp = session.execute(text("SELECT rating FROM players WHERE name = :n"), {"n": opp_name}).fetchone()
         if existing_opp and existing_opp.rating:
@@ -941,10 +954,8 @@ async def arcade_submit_score(data: ArcadeScoreSubmission):
                     match_dt = datetime.strptime(data.date, "%Y-%m-%d")
                 except:
                     pass
-            
+
         # Determine Winner/Loser names for the record
-        # Note: In 'arcade' mode, we assume the user is "Justin" or the current App user.
-        user_name = "Justin" # You can make this dynamic if needed
         winner_name = user_name if result == "Win" else opp_name
         loser_name = opp_name if result == "Win" else user_name
 
