@@ -117,7 +117,8 @@ class MatchManager: NSObject, ObservableObject, AVAudioRecorderDelegate {
     private func setupAudioSession() {
         recordingSession = AVAudioSession.sharedInstance()
         do {
-            try recordingSession.setCategory(.playAndRecord, mode: .default)
+            // Enable Bluetooth devices (AirPods, etc.) for recording
+            try recordingSession.setCategory(.playAndRecord, mode: .default, options: [.allowBluetooth, .allowBluetoothA2DP])
             try recordingSession.setActive(true)
             
             if #available(iOS 17.0, *) {
