@@ -158,8 +158,18 @@ class MatchManager: NSObject, ObservableObject, AVAudioRecorderDelegate {
         recordingSession = AVAudioSession.sharedInstance()
         do {
             // Enable Bluetooth devices (AirPods, etc.) for recording
-            // Use voiceChat mode for optimized speech recognition quality
-            try recordingSession.setCategory(.playAndRecord, mode: .voiceChat, options: [.allowBluetooth, .allowBluetoothA2DP, .defaultToSpeaker])
+            // Use voiceChat mode for optimized speech recognition with built-in noise reduction
+            // voiceChat mode enables: automatic noise reduction, echo cancellation, voice enhancement
+            try recordingSession.setCategory(
+                .playAndRecord,
+                mode: .voiceChat,
+                options: [
+                    .allowBluetooth,
+                    .allowBluetoothA2DP,
+                    .defaultToSpeaker,
+                    .duckOthers  // Reduce volume of other audio during recording
+                ]
+            )
 
             // Request highest quality input for better speech recognition
             try recordingSession.setPreferredIOBufferDuration(0.005) // Low latency
@@ -169,6 +179,8 @@ class MatchManager: NSObject, ObservableObject, AVAudioRecorderDelegate {
 
             // Set preferred input (Bluetooth if available, otherwise built-in)
             updatePreferredInput()
+
+            print("✅ Audio session configured with built-in noise reduction via .voiceChat mode")
             
             if #available(iOS 17.0, *) {
                 AVAudioApplication.requestRecordPermission { allowed in
