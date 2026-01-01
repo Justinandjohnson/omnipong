@@ -112,14 +112,58 @@ class MatchManager: NSObject, ObservableObject, AVAudioRecorderDelegate {
         super.init()
         setupAudioSession()
         loadMatchHistory()
+
+        // Monitor for audio route changes (e.g., AirPods connected/disconnected)
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleAudioRouteChange),
+            name: AVAudioSession.routeChangeNotification,
+            object: nil
+        )
+    }
+
+    @objc private func handleAudioRouteChange(notification: Notification) {
+        // Automatically update preferred input when Bluetooth connects/disconnects
+        guard let userInfo = notification.userInfo,
+              let reasonValue = userInfo[AVAudioSessionRouteChangeReasonKey] as? UInt,
+              let reason = AVAudioSession.RouteChangeReason(rawValue: reasonValue) else {
+            return
+        }
+
+        switch reason {
+        case .newDeviceAvailable, .oldDeviceUnavailable:
+            // Bluetooth device connected or disconnected - update preferred input
+            updatePreferredInput()
+        default:
+            break
+        }
+    }
+
+    private func updatePreferredInput() {
+        do {
+            let availableInputs = recordingSession.availableInputs ?? []
+            if let bluetoothInput = availableInputs.first(where: { $0.portType == .bluetoothHFP || $0.portType == .bluetoothA2DP || $0.portType == .bluetoothLE }) {
+                try recordingSession.setPreferredInput(bluetoothInput)
+                print("🎧 Switched to Bluetooth microphone: \(bluetoothInput.portName)")
+            } else {
+                try recordingSession.setPreferredInput(nil) // Use system default (built-in)
+                print("🎤 Switched to built-in microphone")
+            }
+        } catch {
+            print("⚠️ Failed to update audio input: \(error)")
+        }
     }
     
     private func setupAudioSession() {
         recordingSession = AVAudioSession.sharedInstance()
         do {
             // Enable Bluetooth devices (AirPods, etc.) for recording
-            try recordingSession.setCategory(.playAndRecord, mode: .default, options: [.allowBluetooth, .allowBluetoothA2DP])
+            // iOS automatically routes to Bluetooth if connected, otherwise uses built-in mic
+            try recordingSession.setCategory(.playAndRecord, mode: .default, options: [.allowBluetooth, .allowBluetoothA2DP, .defaultToSpeaker])
             try recordingSession.setActive(true)
+
+            // Set preferred input (Bluetooth if available, otherwise built-in)
+            updatePreferredInput()
             
             if #available(iOS 17.0, *) {
                 AVAudioApplication.requestRecordPermission { allowed in
