@@ -158,8 +158,13 @@ class MatchManager: NSObject, ObservableObject, AVAudioRecorderDelegate {
         recordingSession = AVAudioSession.sharedInstance()
         do {
             // Enable Bluetooth devices (AirPods, etc.) for recording
-            // iOS automatically routes to Bluetooth if connected, otherwise uses built-in mic
-            try recordingSession.setCategory(.playAndRecord, mode: .default, options: [.allowBluetooth, .allowBluetoothA2DP, .defaultToSpeaker])
+            // Use voiceChat mode for optimized speech recognition quality
+            try recordingSession.setCategory(.playAndRecord, mode: .voiceChat, options: [.allowBluetooth, .allowBluetoothA2DP, .defaultToSpeaker])
+
+            // Request highest quality input for better speech recognition
+            try recordingSession.setPreferredIOBufferDuration(0.005) // Low latency
+            try recordingSession.setPreferredSampleRate(44100) // High quality sample rate
+
             try recordingSession.setActive(true)
 
             // Set preferred input (Bluetooth if available, otherwise built-in)
@@ -252,17 +257,22 @@ class MatchManager: NSObject, ObservableObject, AVAudioRecorderDelegate {
     func startRecording() {
         print("🎤 Starting recording...")
         let audioFilename = getDocumentsDirectory().appendingPathComponent("recording.wav")
+
+        // High-quality settings optimized for speech recognition
         let settings: [String: Any] = [
             AVFormatIDKey: Int(kAudioFormatLinearPCM),
-            AVSampleRateKey: 16000,
-            AVNumberOfChannelsKey: 1,
-            AVLinearPCMBitDepthKey: 16,
+            AVSampleRateKey: 44100.0,  // CD-quality sample rate for best recognition
+            AVNumberOfChannelsKey: 1,   // Mono for speech
+            AVLinearPCMBitDepthKey: 16, // 16-bit depth
             AVLinearPCMIsBigEndianKey: false,
-            AVLinearPCMIsFloatKey: false
+            AVLinearPCMIsFloatKey: false,
+            AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue // High quality encoding
         ]
+
         do {
             audioRecorder = try AVAudioRecorder(url: audioFilename, settings: settings)
             audioRecorder?.delegate = self
+            audioRecorder?.isMeteringEnabled = true // Enable audio level monitoring
             audioRecorder?.record()
             withAnimation(.spring(response: 0.4, dampingFraction: 0.6)) {
                 isRecording = true
