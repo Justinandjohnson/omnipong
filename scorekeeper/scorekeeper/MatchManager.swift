@@ -148,6 +148,8 @@ class MatchManager: NSObject, ObservableObject, AVAudioRecorderDelegate {
     // MARK: - Match Management
     func startNewMatch() {
         print("🆕 Starting new match")
+        player1Name = "Player 1"
+        player2Name = "Player 2"
         currentMatch = MatchRecord(player1Name: player1Name, player2Name: player2Name)
         player1Score = 0
         player2Score = 0
@@ -203,12 +205,14 @@ class MatchManager: NSObject, ObservableObject, AVAudioRecorderDelegate {
     // MARK: - Recording Control
     func startRecording() {
         print("🎤 Starting recording...")
-        let audioFilename = getDocumentsDirectory().appendingPathComponent("recording.m4a")
-        let settings = [
-            AVFormatIDKey: Int(kAudioFormatMPEG4AAC),
-            AVSampleRateKey: 44100,
+        let audioFilename = getDocumentsDirectory().appendingPathComponent("recording.wav")
+        let settings: [String: Any] = [
+            AVFormatIDKey: Int(kAudioFormatLinearPCM),
+            AVSampleRateKey: 16000,
             AVNumberOfChannelsKey: 1,
-            AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue
+            AVLinearPCMBitDepthKey: 16,
+            AVLinearPCMIsBigEndianKey: false,
+            AVLinearPCMIsFloatKey: false
         ]
         do {
             audioRecorder = try AVAudioRecorder(url: audioFilename, settings: settings)
@@ -233,7 +237,7 @@ class MatchManager: NSObject, ObservableObject, AVAudioRecorderDelegate {
     
     func audioRecorderDidFinishRecording(_ recorder: AVAudioRecorder, successfully flag: Bool) {
         if flag {
-            let audioFilename = getDocumentsDirectory().appendingPathComponent("recording.m4a")
+            let audioFilename = getDocumentsDirectory().appendingPathComponent("recording.wav")
             sendAudioToBackend(url: audioFilename)
         } else {
             isProcessing = false
@@ -262,8 +266,8 @@ class MatchManager: NSObject, ObservableObject, AVAudioRecorderDelegate {
         
         var body = Data()
         body.append("--\(boundary)\r\n".data(using: .utf8)!)
-        body.append("Content-Disposition: form-data; name=\"file\"; filename=\"recording.m4a\"\r\n".data(using: .utf8)!)
-        body.append("Content-Type: audio/m4a\r\n\r\n".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"file\"; filename=\"recording.wav\"\r\n".data(using: .utf8)!)
+        body.append("Content-Type: audio/wav\r\n\r\n".data(using: .utf8)!)
         body.append(data)
         body.append("\r\n--\(boundary)--\r\n".data(using: .utf8)!)
         request.httpBody = body
@@ -314,18 +318,21 @@ class MatchManager: NSObject, ObservableObject, AVAudioRecorderDelegate {
         withAnimation(.spring(response: 0.5, dampingFraction: 0.7)) {
             self.lastTranscript = transcript
             let messageType = intent["message_type"] as? String ?? "query"
-            
+
             if messageType == "match_report" {
-                if let score1 = intent["user_score"] as? Int,
-                   let score2 = intent["opponent_score"] as? Int {
-                    // Update live scores
+                // Update player names
+                if let p1Name = intent["player1_name"] as? String, !p1Name.isEmpty {
+                    self.player1Name = p1Name
+                }
+                if let p2Name = intent["player2_name"] as? String, !p2Name.isEmpty {
+                    self.player2Name = p2Name
+                }
+
+                // Update scores
+                if let score1 = intent["player1_score"] as? Int,
+                   let score2 = intent["player2_score"] as? Int {
                     self.player1Score = score1
                     self.player2Score = score2
-                }
-                if let name = intent["opponent_name"] as? String {
-                    if self.player2Name == "Player 2" || name.lowercased() == self.player2Name.lowercased() {
-                        self.player2Name = name
-                    }
                 }
             } else if messageType == "action" {
                 if let action = intent["action"] as? String {

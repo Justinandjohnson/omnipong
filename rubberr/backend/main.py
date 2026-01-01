@@ -771,20 +771,23 @@ async def twilio_webhook(request: Request):
             
             if message_type == "match_report":
                 # --- MATCH REPORT FLOW ---
-                if intent.get("opponent_name") and intent.get("user_score") is not None:
+                # Support both old (opponent_name/user_score) and new (player1_name/player2_name) formats
+                p1_score = intent.get("player1_score") or intent.get("user_score")
+                p2_score = intent.get("player2_score") or intent.get("opponent_score")
+                opponent_name = intent.get("player2_name") or intent.get("opponent_name")
+
+                if opponent_name and p1_score is not None:
                     session = SessionLocal()
                     try:
-                        u_score = intent["user_score"]
-                        o_score = intent["opponent_score"]
-                        result = "Win" if u_score > o_score else "Loss"
-                        score_summary = f"{u_score}-{o_score}"
+                        result = "Win" if p1_score > p2_score else "Loss"
+                        score_summary = f"{p1_score}-{p2_score}"
                         set_scores = intent.get("set_scores", "")
-                        
+
                         save_arcade_match(
-                            session, 
-                            intent["opponent_name"], 
-                            result, 
-                            score_summary, 
+                            session,
+                            opponent_name,
+                            result,
+                            score_summary,
                             set_scores
                         )
                         
@@ -895,10 +898,10 @@ async def arcade_submit_score(data: ArcadeScoreSubmission):
             try:
                 parsed = await parse_match_intent(raw_input)
                 intent = parsed.get("intent", {})
-                
-                # Extract values from AI parsing
-                u_score = intent.get("user_score")
-                o_score = intent.get("opponent_score")
+
+                # Extract values from AI parsing (support both old and new field names)
+                u_score = intent.get("player1_score") or intent.get("user_score")
+                o_score = intent.get("player2_score") or intent.get("opponent_score")
                 if u_score is not None and o_score is not None:
                     result = "Win" if u_score > o_score else "Loss"
                     score_summary = f"{u_score}-{o_score}"

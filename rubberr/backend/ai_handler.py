@@ -26,7 +26,8 @@ def get_anthropic_client():
 
 class MatchIntent(BaseModel):
     message_type: str = Field(..., description="Type of message: 'match_report' if user is reporting a score, 'query' if asking a question/other.")
-    opponent_name: Optional[str] = Field(None, description="Name of the opponent played against")
+    user_name: Optional[str] = Field(None, description="Name of the user/player 1 if mentioned")
+    opponent_name: Optional[str] = Field(None, description="Name of the opponent/player 2 played against")
     user_score: Optional[int] = Field(None, description="Score of the user (games won)")
     opponent_score: Optional[int] = Field(None, description="Score of the opponent (games won)")
     set_scores: Optional[str] = Field(None, description="Detailed set scores, e.g., '11-9, 5-11'")
@@ -61,24 +62,26 @@ async def parse_match_intent(text: str) -> dict:
     try:
         client = get_anthropic_client()
         
-        system_prompt = """You are a Table Tennis match assistant for 'Justin'. 
+        system_prompt = """You are a Table Tennis match assistant.
 
 TASK:
 1. CLASSIFY the user's message as 'match_report', 'action', or 'query'.
-   - 'match_report': User is explicitly stating a result or score update (e.g., 'I won 3-0', 'Beat Steve', '11-9, 11-8').
+   - 'match_report': User is explicitly stating a result or score update (e.g., 'Justin vs Alex 3-0', 'I beat Steve 11-9, 11-8', 'Justin 3, Alex 1').
    - 'action': User is giving a command (e.g., 'reset the game', 'finish set', 'send score message', 'save this match', 'log it').
    - 'query': User is asking a question or chatting.
 
 2. EXTRACT:
-   - For 'match_report': Extract 'opponent_name', 'user_score', 'opponent_score'.
+   - For 'match_report': Extract BOTH player names ('player1_name', 'player2_name'), their scores ('player1_score', 'player2_score'), and optional set scores.
    - For 'action': Set 'action' to 'reset_game', 'finish_set', 'send_message', or 'save_match'.
 
 3. FORMAT: Return VALID JSON ONLY.
 {
   "message_type": "match_report" | "action" | "query",
-  "opponent_name": string | null,
-  "user_score": integer | null,
-  "opponent_score": integer | null,
+  "player1_name": string | null,
+  "player2_name": string | null,
+  "player1_score": integer | null,
+  "player2_score": integer | null,
+  "set_scores": string | null,
   "action": string | null
 }"""
 
@@ -106,13 +109,18 @@ TASK:
         message_type = function_args.get('message_type')
 
         if message_type == 'match_report':
-            if not function_args.get('opponent_name'): missing.append("opponent_name")
-            if function_args.get('user_score') is None: missing.append("scores")
-            
+            if not function_args.get('player1_name'): missing.append("player1_name")
+            if not function_args.get('player2_name'): missing.append("player2_name")
+            if function_args.get('player1_score') is None: missing.append("scores")
+
             if not missing:
-                msg = f"Got it. You played {function_args['opponent_name']} and the score was {function_args.get('user_score')}-{function_args.get('opponent_score')}."
+                p1 = function_args.get('player1_name')
+                p2 = function_args.get('player2_name')
+                s1 = function_args.get('player1_score')
+                s2 = function_args.get('player2_score')
+                msg = f"Got it. {p1} vs {p2}, score {s1}-{s2}."
             else:
-                msg = f"I understood you played, but I'm missing details: {', '.join(missing)}."
+                msg = f"I understood you're reporting a match, but I'm missing: {', '.join(missing)}."
         else:
             # For queries, we don't need missing info checks for match data
             msg = "Processing query..."
