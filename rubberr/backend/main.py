@@ -745,6 +745,14 @@ async def arcade_transcribe(file: UploadFile = File(...)):
             "confirmation": parsed.get("confirmation_message"),
             "missing": parsed.get("missing_info")
         }
+    except Exception as e:
+        print(f"❌ Transcribe Error: {e}")
+        return {
+            "status": "error",
+            "error": str(e),
+            "transcript": "Error during processing",
+            "intent": {}
+        }
 
 @app.post("/arcade/process")
 async def arcade_process(req: ProcessText):
