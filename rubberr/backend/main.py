@@ -31,6 +31,9 @@ class ChatMessage(BaseModel):
 class PlayerSearch(BaseModel):
     name: str = None
 
+class ProcessText(BaseModel):
+    text: str
+
 # Initialize BrowserManager for tools
 browser_manager = BrowserManager()
 
@@ -742,12 +745,29 @@ async def arcade_transcribe(file: UploadFile = File(...)):
             "confirmation": parsed.get("confirmation_message"),
             "missing": parsed.get("missing_info")
         }
+
+@app.post("/arcade/process")
+async def arcade_process(req: ProcessText):
+    """
+    Accepts raw text (e.g. from local iOS Speech-to-Text), and parses match intent.
+    """
+    try:
+        # Parse text directly
+        parsed = await parse_match_intent(req.text)
+        
+        return {
+            "status": "success",
+            "transcript": req.text,
+            "intent": parsed.get("intent"),
+            "confirmation": parsed.get("confirmation_message"),
+            "missing": parsed.get("missing_info")
+        }
     except Exception as e:
-        print(f"❌ Transcribe Error: {e}")
+        print(f"❌ Process Error: {e}")
         return {
             "status": "error",
             "error": str(e),
-            "transcript": "Error during processing",
+            "transcript": req.text,
             "intent": {}
         }
 

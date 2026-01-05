@@ -1,6 +1,7 @@
 import Foundation
 import AVFoundation
 import SwiftUI
+import Speech
 
 // MARK: - Data Models
 
@@ -95,9 +96,15 @@ class MatchManager: NSObject, ObservableObject, AVAudioRecorderDelegate {
     @Published var matchHistory: [MatchRecord] = []
     @Published var showMatchComplete = false
     
-    // MARK: - Audio
+    // MARK: - Audio & Speech
     private var audioRecorder: AVAudioRecorder?
     private var recordingSession: AVAudioSession!
+    
+    // Speech Recognition
+    private let speechRecognizer = SFSpeechRecognizer(locale: Locale(identifier: "en-US"))
+    private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
+    private var recognitionTask: SFSpeechRecognitionTask?
+    private let audioEngine = AVAudioEngine()
     
     // MARK: - Persistence Keys
     private let matchHistoryKey = "TableTennisMatchHistory"
@@ -195,6 +202,24 @@ class MatchManager: NSObject, ObservableObject, AVAudioRecorderDelegate {
                     }
                 }
             }
+            
+            // Request Speech Recognition Permission
+            SFSpeechRecognizer.requestAuthorization { authStatus in
+                DispatchQueue.main.async {
+                    switch authStatus {
+                    case .authorized:
+                        print("✅ Speech recognition authorized")
+                    case .denied:
+                        print("❌ Speech recognition denied")
+                    case .restricted:
+                        print("❌ Speech recognition restricted")
+                    case .notDetermined:
+                        print("❌ Speech recognition not determined")
+                    @unknown default:
+                        print("❓ Unknown speech recognition status")
+                    }
+                }
+            }
         } catch {
             print("Failed to set up audio session: \(error)")
         }
@@ -267,50 +292,82 @@ class MatchManager: NSObject, ObservableObject, AVAudioRecorderDelegate {
 
     // MARK: - Recording Control
     func startRecording() {
-        print("🎤 Starting recording...")
-        let audioFilename = getDocumentsDirectory().appendingPathComponent("recording.wav")
-
-        // High-quality settings optimized for speech recognition
-        let settings: [String: Any] = [
-            AVFormatIDKey: Int(kAudioFormatLinearPCM),
-            AVSampleRateKey: 44100.0,  // CD-quality sample rate for best recognition
-            AVNumberOfChannelsKey: 1,   // Mono for speech
-            AVLinearPCMBitDepthKey: 16, // 16-bit depth
-            AVLinearPCMIsBigEndianKey: false,
-            AVLinearPCMIsFloatKey: false,
-            AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue // High quality encoding
-        ]
-
+        print("🎤 Starting local speech recognition...")
+        
+        // Defensive cleanup: ensure previous tap and task are cleared
+        audioEngine.stop()
+        audioEngine.inputNode.removeTap(onBus: 0)
+        
+        recognitionTask?.cancel()
+        recognitionTask = nil
+        
+        let inputNode = audioEngine.inputNode
+        recognitionRequest = SFSpeechAudioBufferRecognitionRequest()
+        guard let recognitionRequest = recognitionRequest else { return }
+        recognitionRequest.shouldReportPartialResults = true
+        
+        recognitionTask = speechRecognizer?.recognitionTask(with: recognitionRequest) { [weak self] result, error in
+            guard let self = self else { return }
+            
+            if let result = result {
+                DispatchQueue.main.async {
+                    self.lastTranscript = result.bestTranscription.formattedString
+                }
+            }
+            
+            if error != nil || result?.isFinal == true {
+                self.stopAudioEngine()
+            }
+        }
+        
+        let recordingFormat = inputNode.outputFormat(forBus: 0)
+        inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { buffer, _ in
+            self.recognitionRequest?.append(buffer)
+        }
+        
+        audioEngine.prepare()
+        
         do {
-            audioRecorder = try AVAudioRecorder(url: audioFilename, settings: settings)
-            audioRecorder?.delegate = self
-            audioRecorder?.isMeteringEnabled = true // Enable audio level monitoring
-            audioRecorder?.record()
+            try audioEngine.start()
             withAnimation(.spring(response: 0.4, dampingFraction: 0.6)) {
                 isRecording = true
+                isProcessing = false
             }
         } catch {
-            print("❌ Could not start recording: \(error)")
+            print("❌ Could not start audio engine: \(error)")
+            stopAudioEngine()
         }
     }
     
     func stopRecording() {
         print("⏹️ Stopping recording...")
-        audioRecorder?.stop()
+        
+        stopAudioEngine()
+        
         withAnimation {
             isRecording = false
             isProcessing = true
         }
+        
+        // Final transcript processing
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
+            guard let self = self else { return }
+            self.sendTranscriptToBackend(text: self.lastTranscript)
+        }
+    }
+
+    private func stopAudioEngine() {
+        if audioEngine.isRunning {
+            audioEngine.stop()
+        }
+        audioEngine.inputNode.removeTap(onBus: 0)
+        recognitionRequest?.endAudio()
+        recognitionRequest = nil
+        recognitionTask = nil
     }
     
     func audioRecorderDidFinishRecording(_ recorder: AVAudioRecorder, successfully flag: Bool) {
-        if flag {
-            let audioFilename = getDocumentsDirectory().appendingPathComponent("recording.wav")
-            sendAudioToBackend(url: audioFilename)
-        } else {
-            isProcessing = false
-        }
-        audioRecorder = nil
+        // No longer used for main STT flow but kept for delegate compliance if needed
     }
     
     private func getDocumentsDirectory() -> URL {
@@ -318,27 +375,20 @@ class MatchManager: NSObject, ObservableObject, AVAudioRecorderDelegate {
     }
     
     // MARK: - API Integration
-    private func sendAudioToBackend(url: URL) {
-        guard let data = try? Data(contentsOf: url) else {
+    private func sendTranscriptToBackend(text: String) {
+        guard !text.isEmpty else {
             isProcessing = false
             return
         }
         
-        let targetURL = URL(string: "\(baseURL)/arcade/transcribe")!
-        print("🚀 Sending audio to backend: \(targetURL)")
+        let targetURL = URL(string: "\(baseURL)/arcade/process")!
+        print("🚀 Sending transcript to backend: \(targetURL)")
         var request = URLRequest(url: targetURL)
         request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         
-        let boundary = "Boundary-\(UUID().uuidString)"
-        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
-        
-        var body = Data()
-        body.append("--\(boundary)\r\n".data(using: .utf8)!)
-        body.append("Content-Disposition: form-data; name=\"file\"; filename=\"recording.wav\"\r\n".data(using: .utf8)!)
-        body.append("Content-Type: audio/wav\r\n\r\n".data(using: .utf8)!)
-        body.append(data)
-        body.append("\r\n--\(boundary)--\r\n".data(using: .utf8)!)
-        request.httpBody = body
+        let body: [String: Any] = ["text": text]
+        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
 
         URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
             DispatchQueue.main.async {
@@ -350,13 +400,15 @@ class MatchManager: NSObject, ObservableObject, AVAudioRecorderDelegate {
                 }
                 
                 if let data = data {
-                    if let rawResponse = String(data: data, encoding: .utf8) {
-                        print("📡 Raw Response: \(rawResponse)")
-                    }
                     self?.processBackendResponse(data)
                 }
             }
         }.resume()
+    }
+    
+    private func sendAudioToBackend(url: URL) {
+        // Legacy method, no longer used by default
+        isProcessing = false
     }
     
     private func processBackendResponse(_ data: Data) {
@@ -369,12 +421,15 @@ class MatchManager: NSObject, ObservableObject, AVAudioRecorderDelegate {
             
             print("❌ Failed to parse backend response")
             if let response = json {
-                if let error = response["error"] as? String {
-                    print("🛑 Server Error: \(error)")
-                    self.lastTranscript = "Server Error: \(error)"
+                if let errorMsg = response["error"] as? String {
+                    print("🛑 Server Error: \(errorMsg)")
+                    self.lastTranscript = "Server Error: \(errorMsg)"
+                } else if let detail = response["detail"] as? String {
+                    print("🛑 Detail: \(detail)")
+                    self.lastTranscript = "Backend Error: \(detail) (Check URL)"
                 } else {
                     print("⚠️ Response Keys: \(response.keys)")
-                    self.lastTranscript = "Invalid Backend Response"
+                    self.lastTranscript = "Invalid Response (Check URL)"
                 }
             } else if let raw = String(data: data, encoding: .utf8) {
                 print("📄 Raw non-JSON output: \(raw)")

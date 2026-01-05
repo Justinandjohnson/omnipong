@@ -43,6 +43,7 @@ struct VideoBackgroundView: View {
         self.looper = playerLooper
         queuePlayer.play()
         queuePlayer.isMuted = true
+        queuePlayer.volume = 0
     }
 }
 
