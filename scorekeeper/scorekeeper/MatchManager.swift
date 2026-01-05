@@ -97,7 +97,6 @@ class MatchManager: NSObject, ObservableObject, AVAudioRecorderDelegate {
     @Published var showMatchComplete = false
     
     // MARK: - Audio & Speech
-    private var audioRecorder: AVAudioRecorder?
     private var recordingSession: AVAudioSession!
     
     // Speech Recognition
@@ -366,9 +365,6 @@ class MatchManager: NSObject, ObservableObject, AVAudioRecorderDelegate {
         recognitionTask = nil
     }
     
-    func audioRecorderDidFinishRecording(_ recorder: AVAudioRecorder, successfully flag: Bool) {
-        // No longer used for main STT flow but kept for delegate compliance if needed
-    }
     
     private func getDocumentsDirectory() -> URL {
         FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
@@ -406,10 +402,6 @@ class MatchManager: NSObject, ObservableObject, AVAudioRecorderDelegate {
         }.resume()
     }
     
-    private func sendAudioToBackend(url: URL) {
-        // Legacy method, no longer used by default
-        isProcessing = false
-    }
     
     private func processBackendResponse(_ data: Data) {
         let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]

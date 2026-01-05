@@ -33,7 +33,7 @@ struct VideoBackgroundView: View {
     private func setupLoopingVideo() {
         guard let url = Bundle.main.url(forResource: "background", withExtension: "mp4") else {
             print("❌ Could not find background.mp4 in bundle")
-            errorMessage = "❌ Debug: background.mp4 not found in Bundle.main"
+            errorMessage = "Background video not found."
             return
         }
         let playerItem = AVPlayerItem(url: url)
