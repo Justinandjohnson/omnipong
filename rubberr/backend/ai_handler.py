@@ -26,10 +26,10 @@ def get_anthropic_client():
 
 class MatchIntent(BaseModel):
     message_type: str = Field(..., description="Type of message: 'match_report' if user is reporting a score, 'query' if asking a question/other.")
-    user_name: Optional[str] = Field(None, description="Name of the user/player 1 if mentioned")
-    opponent_name: Optional[str] = Field(None, description="Name of the opponent/player 2 played against")
-    user_score: Optional[int] = Field(None, description="Score of the user (games won)")
-    opponent_score: Optional[int] = Field(None, description="Score of the opponent (games won)")
+    player1_name: Optional[str] = Field(None, description="Name of player 1 (usually the user, Justin)")
+    player2_name: Optional[str] = Field(None, description="Name of player 2 (opponent)")
+    player1_score: Optional[int] = Field(None, description="Score of player 1 (Justin)")
+    player2_score: Optional[int] = Field(None, description="Score of player 2 (opponent)")
     set_scores: Optional[str] = Field(None, description="Detailed set scores, e.g., '11-9, 5-11'")
     match_date: Optional[str] = Field(None, description="Date of match if mentioned, else None")
     action: Optional[str] = Field(None, description="Action to perform: 'reset_game', 'finish_set', 'send_message', 'save_match', or null")
@@ -64,6 +64,8 @@ async def parse_match_intent(text: str) -> dict:
         
         system_prompt = """You are an expert Table Tennis match assistant with deep knowledge of scoring rules.
 
+IDENTITY: The user of this app is Justin.
+
 TABLE TENNIS RULES:
 - A SET (individual game) is won by first to 11 points, must win by 2+ (e.g., 11-7, 12-10, 15-13)
 - DEUCE: At 10-10, play continues until one player leads by 2 (e.g., 11-10 is INVALID, 12-10 is valid, 15-13 is valid)
@@ -85,6 +87,10 @@ SCORING INTELLIGENCE:
 - "12-10" = Deuce set (went beyond 11, still valid if win by 2)
 - "Fifteen thirteen" or "15-13" = Long deuce set (still valid)
 
+USER IDENTIFICATION:
+- If the user says "I", "me", "my", or doesn't mention their own name while reporting a score (e.g., "Beat Alex 11-7"), assume player1_name is "Justin".
+- Always prioritize "Justin" as player1_name unless they are explicitly reporting a match between two other people.
+
 TASK:
 1. CLASSIFY the user's message as 'match_report', 'action', or 'query'.
    - 'match_report': User is reporting a score (set or match result)
@@ -92,8 +98,8 @@ TASK:
    - 'query': User asks a question
 
 2. EXTRACT for 'match_report':
-   - player1_name: First player mentioned (often the speaker/user)
-   - player2_name: Second player/opponent name
+   - player1_name: Name of the first player (often "Justin")
+   - player2_name: Name of the second player/opponent
    - player1_score: Player 1's score (points in a SET, or sets won in MATCH)
    - player2_score: Player 2's score (points in a SET, or sets won in MATCH)
    - set_scores: Detailed set-by-set scores if mentioned (e.g., "11-9, 11-8, 9-11")
@@ -113,9 +119,9 @@ TASK:
 }
 
 EXAMPLES:
-- "11-7" → {"message_type": "match_report", "player1_score": 11, "player2_score": 7, ...}
+- "11-7" → {"message_type": "match_report", "player1_name": "Justin", "player1_score": 11, "player2_score": 7, ...}
 - "Justin beat Alex 3-1" → {"message_type": "match_report", "player1_name": "Justin", "player2_name": "Alex", "player1_score": 3, "player2_score": 1, ...}
-- "I won 11-9" → {"message_type": "match_report", "player1_score": 11, "player2_score": 9, ...}"""
+- "I won 11-9" → {"message_type": "match_report", "player1_name": "Justin", "player1_score": 11, "player2_score": 9, ...}"""
 
         response = client.messages.create(
             model="claude-sonnet-4-5",
