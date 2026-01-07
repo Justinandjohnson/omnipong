@@ -163,17 +163,16 @@ class MatchManager: NSObject, ObservableObject, AVAudioRecorderDelegate {
     private func setupAudioSession() {
         recordingSession = AVAudioSession.sharedInstance()
         do {
-            // Enable Bluetooth devices (AirPods, etc.) for recording
-            // Use voiceChat mode for optimized speech recognition with built-in noise reduction
-            // voiceChat mode enables: automatic noise reduction, echo cancellation, voice enhancement
+            // Use spokenAudio mode for optimized speech recognition
+            // spokenAudio mode is specifically tuned for speech-to-text accuracy
             try recordingSession.setCategory(
                 .playAndRecord,
-                mode: .voiceChat,
+                mode: .spokenAudio,
                 options: [
                     .allowBluetooth,
                     .allowBluetoothA2DP,
                     .defaultToSpeaker,
-                    .duckOthers  // Reduce volume of other audio during recording
+                    .duckOthers
                 ]
             )
 
@@ -186,7 +185,7 @@ class MatchManager: NSObject, ObservableObject, AVAudioRecorderDelegate {
             // Set preferred input (Bluetooth if available, otherwise built-in)
             updatePreferredInput()
 
-            print("✅ Audio session configured with built-in noise reduction via .voiceChat mode")
+            print("✅ Audio session configured with .spokenAudio mode and voice processing optimization")
             
             if #available(iOS 17.0, *) {
                 AVAudioApplication.requestRecordPermission { allowed in
@@ -301,9 +300,16 @@ class MatchManager: NSObject, ObservableObject, AVAudioRecorderDelegate {
         recognitionTask = nil
         
         let inputNode = audioEngine.inputNode
+        
+        // Enable system-level voice processing for noise suppression and echo cancellation
+        // This is crucial for noisy environments like a table tennis gym
+        try? inputNode.setVoiceProcessingEnabled(true)
+        
         recognitionRequest = SFSpeechAudioBufferRecognitionRequest()
         guard let recognitionRequest = recognitionRequest else { return }
         recognitionRequest.shouldReportPartialResults = true
+        recognitionRequest.addsPunctuation = true // Better transcript readability
+        recognitionRequest.requiresOnDeviceRecognition = true // Better performance and reliability
         
         recognitionTask = speechRecognizer?.recognitionTask(with: recognitionRequest) { [weak self] result, error in
             guard let self = self else { return }
