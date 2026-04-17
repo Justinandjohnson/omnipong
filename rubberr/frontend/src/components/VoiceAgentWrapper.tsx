@@ -1,6 +1,7 @@
 "use client";
 import dynamic from 'next/dynamic';
 import { useState, useEffect } from 'react';
+import { usePathname } from 'next/navigation';
 
 const VoiceAgent = dynamic(() => import('./VoiceAgent'), { 
   ssr: false,
@@ -13,6 +14,7 @@ const ChatAgent = dynamic(() => import('./ChatAgent'), {
 });
 
 export default function VoiceAgentWrapper() {
+  const pathname = usePathname();
   const [mode, setMode] = useState<'voice' | 'chat'>('chat');
 
   useEffect(() => {
@@ -31,6 +33,8 @@ export default function VoiceAgentWrapper() {
     setMode('chat');
     localStorage.setItem('aiAgentMode', 'chat');
   };
+
+  if (pathname === '/chat') return null;
 
   if (mode === 'voice') {
     return <VoiceAgent />;

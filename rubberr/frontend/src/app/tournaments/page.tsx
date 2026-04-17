@@ -42,7 +42,7 @@ export default function TournamentsPage() {
 
   useEffect(() => {
     // 1. Load Data
-    fetch('${API_URL}/tournaments?region=all')
+    fetch(`${API_URL}/tournaments?region=all`)
       .then(res => res.json())
       .then(data => {
         setTournaments(data);
