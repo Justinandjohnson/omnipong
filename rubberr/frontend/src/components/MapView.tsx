@@ -4,6 +4,8 @@ import 'leaflet/dist/leaflet.css';
 import { Icon } from 'leaflet';
 import { useEffect, useState } from 'react';
 
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+
 // Fix for default marker icon in Leaflet/Next.js
 const customIcon = new Icon({
   iconUrl: "https://unpkg.com/leaflet@1.7.1/dist/images/marker-icon.png",
@@ -36,7 +38,7 @@ export default function MapView() {
     setIsMounted(true);
     
     // Fetch Real Tournaments from Backend
-    fetch('http://localhost:8000/tournaments')
+    fetch(`${API_URL}/tournaments`)
         .then(res => res.json())
         .then((data: any[]) => {
             const mappedMarkers = data.map(t => {

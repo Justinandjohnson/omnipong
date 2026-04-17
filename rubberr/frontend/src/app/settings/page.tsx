@@ -1,13 +1,15 @@
 "use client";
 import Sidebar from "@/components/Sidebar";
 import { useEffect, useState } from "react";
-import { RefreshCw, User, Shield, Video } from "lucide-react";
+import { RefreshCw, User, Shield } from "lucide-react";
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 export default function SettingsPage() {
   const [user, setUser] = useState<any>(null);
 
   useEffect(() => {
-     fetch('http://localhost:8000/user')
+     fetch(`${API_URL}/user`)
         .then(r => r.json())
         .then(setUser)
         .catch(e => console.error(e));

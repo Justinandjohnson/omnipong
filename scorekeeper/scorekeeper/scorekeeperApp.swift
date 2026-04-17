@@ -1,4 +1,5 @@
 import SwiftUI
+import scorekeeperFeature
 
 @main
 struct ScorekeeperApp: App {

@@ -3,25 +3,27 @@ import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { RefreshCw } from 'lucide-react';
 
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+
 interface CareerGraphProps {
   onSyncOmni?: () => void;
-  onSyncStadium?: () => void;
   onSyncLeague?: () => void;
+  onSyncTournaments?: () => void;
   source?: "usatt" | "league" | "arcade";
   onSourceChange?: (mode: "usatt" | "league" | "arcade") => void;
   hideToggle?: boolean;
 }
 
-export default function CareerGraph({ onSyncOmni, onSyncStadium, onSyncLeague, onSyncTournaments, source = "usatt", onSourceChange, hideToggle = false }: CareerGraphProps & { onSyncTournaments?: () => void }) {
+export default function CareerGraph({ onSyncOmni, onSyncLeague, onSyncTournaments, source = "usatt", onSourceChange, hideToggle = false }: CareerGraphProps) {
   const [data, setData] = useState<any[]>([]); // Store full objects { rating, date }
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     setLoading(true);
     // Fetch user's rating history instead of match opponent ratings
-    let endpoint = 'http://localhost:8000/rating_history?source=usatt';
-    if (source === 'league') endpoint = 'http://localhost:8000/rating_history?source=league';
-    if (source === 'arcade') endpoint = 'http://localhost:8000/rating_history?source=arcade';
+    let endpoint = `${API_URL}/rating_history?source=usatt`;
+    if (source === 'league') endpoint = `${API_URL}/rating_history?source=league`;
+    if (source === 'arcade') endpoint = `${API_URL}/rating_history?source=arcade`;
 
     fetch(endpoint)
       .then(res => res.json())

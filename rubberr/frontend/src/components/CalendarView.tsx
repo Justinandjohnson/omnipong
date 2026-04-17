@@ -13,22 +13,10 @@ export default function CalendarView({ tournaments, userRating = 1500, onToggleR
   const [isInternational, setIsInternational] = useState(false);
   const [currentDate, setCurrentDate] = useState(new Date());
 
-  // Sync calendar when data changes
+  // Sync calendar when data changes - always default to current month
   useEffect(() => {
-    if (tournaments.length > 0) {
-        // Parse the very first valid date found
-        const validTourney = tournaments.find(t => t.date_range && t.date_range.match(/(\d{1,2})\/(\d{1,2})\/(\d{2})/));
-        if (validTourney) {
-            const match = validTourney.date_range.match(/(\d{1,2})\/(\d{1,2})\/(\d{2})/);
-            if (match) {
-               const [_, m, d, y] = match;
-               setCurrentDate(new Date(2000 + parseInt(y), parseInt(m) - 1, 1));
-            }
-        }
-    } else {
-        setCurrentDate(new Date());
-    }
-  }, [tournaments]);
+    setCurrentDate(new Date());
+  }, []); // Only run once on mount
   
   const handleToggle = () => {
       const newState = !isInternational;

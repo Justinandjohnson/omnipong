@@ -4,12 +4,14 @@ import { motion } from 'framer-motion';
 import { useCallback, useState, useEffect, useRef } from 'react';
 import { Mic, X, Radio } from 'lucide-react';
 
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+
 // Define tools outside to prevent re-creation on render
 const clientTools = {
     // === DATA RETRIEVAL ===
     getContext: async () => {
          try {
-             const res = await fetch('http://localhost:8000/tools/context');
+             const res = await fetch(`${API_URL}/tools/context`);
              if (!res.ok) throw new Error(`HTTP ${res.status}`);
              const data = await res.json();
              return JSON.stringify(data);
@@ -18,10 +20,10 @@ const clientTools = {
              return "Error fetching user context and recent match history.";
          }
     },
-    
+
     getStats: async () => {
         try {
-            const res = await fetch('http://localhost:8000/tools/stats');
+            const res = await fetch(`${API_URL}/tools/stats`);
             if (!res.ok) throw new Error(`HTTP ${res.status}`);
             const data = await res.json();
             return JSON.stringify(data);
@@ -33,7 +35,7 @@ const clientTools = {
 
     getAnalysis: async () => {
         try {
-            const res = await fetch('http://localhost:8000/tools/analysis');
+            const res = await fetch(`${API_URL}/tools/analysis`);
             if (!res.ok) throw new Error(`HTTP ${res.status}`);
             const data = await res.json();
             return JSON.stringify(data);
@@ -46,37 +48,37 @@ const clientTools = {
     // === SYNC CONTROL ===
     syncOmnipong: async () => {
         try {
-            const res = await fetch('http://localhost:8000/tools/sync/omnipong', { method: 'POST' });
+            const res = await fetch(`${API_URL}/tools/sync/omnipong`, { method: 'POST' });
             const data = await res.json();
             return JSON.stringify(data);
         } catch(e) {
             return JSON.stringify({ status: "error", message: String(e) });
         }
     },
-    
+
     syncStadium: async () => {
         try {
-            const res = await fetch('http://localhost:8000/tools/sync/stadium', { method: 'POST' });
+            const res = await fetch(`${API_URL}/tools/sync/stadium`, { method: 'POST' });
             const data = await res.json();
             return JSON.stringify(data);
         } catch(e) {
             return JSON.stringify({ status: "error", message: String(e) });
         }
     },
-    
+
     syncLeague: async () => {
         try {
-            const res = await fetch('http://localhost:8000/tools/sync/league', { method: 'POST' });
+            const res = await fetch(`${API_URL}/tools/sync/league`, { method: 'POST' });
             const data = await res.json();
             return JSON.stringify(data);
         } catch(e) {
             return JSON.stringify({ status: "error", message: String(e) });
         }
     },
-    
+
     syncLeaguePlayers: async () => {
         try {
-            const res = await fetch('http://localhost:8000/tools/sync/league_players', { method: 'POST' });
+            const res = await fetch(`${API_URL}/tools/sync/league_players`, { method: 'POST' });
             const data = await res.json();
             return JSON.stringify(data);
         } catch(e) {
@@ -87,14 +89,14 @@ const clientTools = {
     syncTournaments: async (parameters: any) => {
         try {
             const { scope } = parameters || { scope: 'regional' };
-            const res = await fetch(`http://localhost:8000/tools/sync/tournaments?scope=${scope}`, { method: 'POST' });
+            const res = await fetch(`${API_URL}/tools/sync/tournaments?scope=${scope}`, { method: 'POST' });
             const data = await res.json();
             return JSON.stringify(data);
         } catch(e) {
             return JSON.stringify({ status: "error", message: String(e) });
         }
     },
-    
+
     // === DATA QUERIES ===
     queryMatches: async (parameters: any) => {
         try {
@@ -103,26 +105,26 @@ const clientTools = {
             if (opponent_name) queryParams.append('opponent_name', opponent_name);
             if (date_from) queryParams.append('date_from', date_from);
             if (result) queryParams.append('result', result);
-            
-            const res = await fetch(`http://localhost:8000/tools/query/matches?${queryParams}`, { method: 'POST' });
+
+            const res = await fetch(`${API_URL}/tools/query/matches?${queryParams}`, { method: 'POST' });
             const data = await res.json();
             return JSON.stringify(data);
         } catch(e) {
             return JSON.stringify({ error: String(e) });
         }
     },
-    
+
     calculateStats: async (parameters: any) => {
         try {
             const { metric } = parameters || {};
-            const res = await fetch(`http://localhost:8000/tools/stats/calculate?metric=${metric}`, { method: 'POST' });
+            const res = await fetch(`${API_URL}/tools/stats/calculate?metric=${metric}`, { method: 'POST' });
             const data = await res.json();
             return JSON.stringify(data);
         } catch(e) {
             return JSON.stringify({ error: String(e) });
         }
     },
-    
+
     searchTournaments: async (parameters: any) => {
         try {
             const { location, date_from } = parameters || {};
@@ -130,7 +132,7 @@ const clientTools = {
             if (location) queryParams.append('location', location);
             if (date_from) queryParams.append('date_from', date_from);
 
-            const res = await fetch(`http://localhost:8000/tools/query/tournaments?${queryParams}`, { method: 'POST' });
+            const res = await fetch(`${API_URL}/tools/query/tournaments?${queryParams}`, { method: 'POST' });
             const data = await res.json();
             return JSON.stringify(data);
         } catch(e) {
@@ -141,7 +143,7 @@ const clientTools = {
     getPracticePartners: async (parameters: any) => {
         try {
             const { limit } = parameters || {};
-            const res = await fetch(`http://localhost:8000/tools/practice_partners?limit=${limit || 5}`);
+            const res = await fetch(`${API_URL}/tools/practice_partners?limit=${limit || 5}`);
             if (!res.ok) throw new Error(`HTTP ${res.status}`);
             const data = await res.json();
             return JSON.stringify(data);
@@ -158,7 +160,7 @@ const clientTools = {
             if (tournament_title) queryParams.append('tournament_title', tournament_title);
             if (limit) queryParams.append('limit', limit.toString());
 
-            const res = await fetch(`http://localhost:8000/tools/tournament_intelligence?${queryParams}`);
+            const res = await fetch(`${API_URL}/tools/tournament_intelligence?${queryParams}`);
             if (!res.ok) throw new Error(`HTTP ${res.status}`);
             const data = await res.json();
             return JSON.stringify(data);
@@ -170,23 +172,20 @@ const clientTools = {
 };
 
 const agentCallbacks = {
-    onConnect: () => console.log('✅ Connected to Agent'),
-    onDisconnect: () => console.log('❌ Disconnected'),
-    onMessage: (msg: any) => console.log('📩 Message from Agent:', msg),
+    onConnect: () => console.log('Connected to Agent'),
+    onDisconnect: () => console.log('Disconnected'),
+    onMessage: (msg: any) => console.log('Message from Agent:', msg),
     onError: (message: string, context?: any) => {
-        console.error('⚠️ Voice Agent Error:', message, context);
+        console.error('Voice Agent Error:', message, context);
     },
     onStatusChange: ({ status }: { status: string }) => {
-        console.log('🔄 Connection Status Changed:', status);
+        console.log('Connection Status Changed:', status);
     }
 };
 
 export default function VoiceAgent() {
   const [isOpen, setIsOpen] = useState(false);
-  
-  // NOTE: Removed clientTools temporarily to test if they're causing the disconnect.
-  // The tools defined here MUST match exactly what's configured in the ElevenLabs dashboard.
-  // If there's a mismatch, the server disconnects immediately.
+
   const conversation = useConversation({
     clientTools: clientTools,
     ...agentCallbacks
@@ -203,7 +202,7 @@ export default function VoiceAgent() {
       return () => {
           const current = conversationRef.current;
           if (current.status === 'connected' || current.status === 'connecting') {
-              console.log("🧹 Cleaning up session on unmount...");
+              console.log("Cleaning up session on unmount...");
               current.endSession().catch(e => console.warn("Cleanup error:", e));
           }
       };
@@ -211,28 +210,26 @@ export default function VoiceAgent() {
 
   const handleStart = useCallback(async () => {
       const agentId = process.env.NEXT_PUBLIC_ELEVENLABS_AGENT_ID || "mA8M9G5vMMdp6ibsraBq";
-      
+
       try {
           // Explicitly request mic permission before starting
           await navigator.mediaDevices.getUserMedia({ audio: true });
-          
+
           if (conversation.status === 'disconnected') {
-              console.log("🚀 Starting Session (WebSocket)...");
               await conversation.startSession({
                   agentId: agentId,
-                  connectionType: 'websocket' // Using WebSocket to avoid WebRTC DataChannel crash bug
+                  connectionType: 'websocket'
               });
           } else {
-              console.warn("⚠️ Cannot start session: already in state", conversation.status);
+              console.warn("Cannot start session: already in state", conversation.status);
           }
       } catch (e) {
-          console.error("❌ Failed to start conversation:", e);
+          console.error("Failed to start conversation:", e);
           alert("Could not access microphone or start session.");
       }
   }, [conversation]);
 
   const handleStop = useCallback(async () => {
-      console.log("🛑 Ending Session...");
       await conversation.endSession();
   }, [conversation]);
 
@@ -244,7 +241,7 @@ export default function VoiceAgent() {
           setIsOpen(true);
           handleStart();
       }
-  }
+  };
 
   // Visual State
   const status = conversation.status; // 'connected', 'connecting', 'disconnected'
@@ -253,18 +250,18 @@ export default function VoiceAgent() {
   return (
     <div className="fixed bottom-6 right-6 z-[9999]">
         {/* Expanded Window */}
-        <motion.div 
+        <motion.div
             initial={false}
-            animate={{ 
-                width: isOpen ? 320 : 64, 
+            animate={{
+                width: isOpen ? 320 : 64,
                 height: isOpen ? 400 : 64,
-                borderRadius: isOpen ? 24 : 32 
+                borderRadius: isOpen ? 24 : 32
             }}
             className="bg-[#0a0a0a] border border-[#333] shadow-2xl overflow-hidden relative"
         >
             {/* Collapsed Button State */}
             {!isOpen && (
-                <button 
+                <button
                     onClick={toggle}
                     className="w-full h-full flex items-center justify-center bg-[var(--rubber-red)] text-white hover:scale-110 transition-transform"
                 >
@@ -291,8 +288,8 @@ export default function VoiceAgent() {
                     {/* Visualizer Area */}
                     <div className="flex-1 flex flex-col items-center justify-center p-8 relative">
                         {/* Orb Animation */}
-                        <motion.div 
-                            animate={{ 
+                        <motion.div
+                            animate={{
                                 scale: isSpeaking ? [1, 1.2, 1] : 1,
                                 opacity: isSpeaking ? 1 : 0.5,
                             }}
@@ -302,7 +299,7 @@ export default function VoiceAgent() {
                         <div className="w-24 h-24 rounded-full bg-black border border-[#333] flex items-center justify-center relative z-10 shadow-2xl shadow-red-900/20">
                              <Radio size={32} className={isSpeaking ? "text-white animate-pulse" : "text-gray-600"} />
                         </div>
-                        
+
                         <p className="mt-8 text-center text-sm text-gray-400">
                             {isSpeaking ? "Speaking..." : "Ask me about your matches..."}
                         </p>

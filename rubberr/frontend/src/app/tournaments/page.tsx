@@ -4,6 +4,8 @@ import TournamentCard from "@/components/TournamentCard";
 import { useEffect, useState } from "react";
 import { Search, MapPin, Sparkles } from "lucide-react";
 
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+
 export default function TournamentsPage() {
   const [tournaments, setTournaments] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -40,7 +42,7 @@ export default function TournamentsPage() {
 
   useEffect(() => {
     // 1. Load Data
-    fetch('http://localhost:8000/tournaments?region=all')
+    fetch('${API_URL}/tournaments?region=all')
       .then(res => res.json())
       .then(data => {
         setTournaments(data);
@@ -81,7 +83,7 @@ export default function TournamentsPage() {
     }
 
     // 3. Load AI Insights
-    fetch('http://localhost:8000/tools/tournament_intelligence?limit=200')
+    fetch(`${API_URL}/tools/tournament_intelligence?limit=200`)
       .then(res => res.json())
       .then(data => setAiInsights(data))
       .catch(e => console.error(e));

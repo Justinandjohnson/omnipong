@@ -2,6 +2,8 @@
 import { useEffect, useState } from 'react';
 import { TrendingUp, Activity, Trophy, Award } from 'lucide-react';
 
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+
 interface StatProps {
   label: string;
   value: string;
@@ -10,7 +12,7 @@ interface StatProps {
   trend?: "up" | "down" | "neutral";
 }
 
-const StatCard = ({ label, value, subtext, icon, trend }: StatProps) => (
+const StatCard = ({ label, value, subtext, icon }: StatProps) => (
   <div className="bg-[#171717] border border-[#333] p-4 rounded-xl flex items-start justify-between hover:border-[var(--rubber-red)] transition-all group">
     <div>
       <p className="text-gray-400 text-xs font-medium uppercase tracking-wider">{label}</p>
@@ -29,7 +31,7 @@ export default function RubberrStats({ rating, source = "usatt" }: { rating: num
 
   useEffect(() => {
     setLoading(true);
-    fetch(`http://localhost:8000/stats?source=${source}`)
+    fetch(`${API_URL}/stats?source=${source}`)
       .then(res => res.json())
       .then(data => {
         setStats(data);

@@ -1,25 +1,55 @@
 "use client";
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { Send } from 'lucide-react';
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 export default function ChatInterface() {
   const [messages, setMessages] = useState([
     { role: 'agent', content: "Hello! I'm Coach Rubberr. I've analyzed your latest match history. Ready to find your next tournament?" }
   ]);
   const [input, setInput] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const handleSend = () => {
-    if (!input.trim()) return;
-    
-    // Optimistic Update
-    setMessages(prev => [...prev, { role: 'user', content: input }]);
-    const currentInput = input;
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
+
+  const handleSend = async () => {
+    const trimmed = input.trim();
+    if (!trimmed || isLoading) return;
+
+    // Optimistic update
+    setMessages(prev => [...prev, { role: 'user', content: trimmed }]);
     setInput("");
+    setError(null);
+    setIsLoading(true);
 
-    // Simulate Agent Response (Mock for now, can connect to backend /chat later)
-    setTimeout(() => {
-      setMessages(prev => [...prev, { role: 'agent', content: `I found 3 tournaments eligible for your rating (1177). Would you like me to auto-enter you in the 'U1400' event at the Phoenix Open?` }]);
-    }, 1000);
+    try {
+      const res = await fetch(`${API_URL}/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: trimmed }),
+      });
+
+      if (!res.ok) {
+        throw new Error(`Server error ${res.status}`);
+      }
+
+      const data = await res.json();
+      setMessages(prev => [...prev, { role: 'agent', content: data.response }]);
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : 'Unknown error';
+      setError(`Failed to reach Coach Rubberr: ${errMsg}`);
+      setMessages(prev => [...prev, {
+        role: 'agent',
+        content: 'Sorry, I could not connect to the backend right now. Make sure the server is running.'
+      }]);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -44,10 +74,10 @@ export default function ChatInterface() {
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         {messages.map((m, i) => (
           <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-            <div 
+            <div
               className={`max-w-[80%] p-3 rounded-2xl text-sm ${
-                m.role === 'user' 
-                  ? 'bg-[var(--rubber-red)] text-white rounded-br-none' 
+                m.role === 'user'
+                  ? 'bg-[var(--rubber-red)] text-white rounded-br-none'
                   : 'bg-[#262626] text-gray-200 rounded-bl-none'
               }`}
             >
@@ -55,20 +85,42 @@ export default function ChatInterface() {
             </div>
           </div>
         ))}
+
+        {/* Loading indicator */}
+        {isLoading && (
+          <div className="flex justify-start">
+            <div className="bg-[#262626] text-gray-400 p-3 rounded-2xl rounded-bl-none text-sm flex items-center gap-2">
+              <span className="w-1.5 h-1.5 rounded-full bg-gray-400 animate-bounce" style={{ animationDelay: '0ms' }} />
+              <span className="w-1.5 h-1.5 rounded-full bg-gray-400 animate-bounce" style={{ animationDelay: '150ms' }} />
+              <span className="w-1.5 h-1.5 rounded-full bg-gray-400 animate-bounce" style={{ animationDelay: '300ms' }} />
+            </div>
+          </div>
+        )}
+
+        {/* Error banner */}
+        {error && (
+          <div className="text-xs text-red-400 text-center px-4 py-1 bg-red-900/20 rounded-lg border border-red-800/40">
+            {error}
+          </div>
+        )}
+
+        <div ref={messagesEndRef} />
       </div>
 
       {/* Input */}
       <div className="p-3 border-t border-[#333] bg-[#0f0f0f] flex gap-2">
-        <input 
+        <input
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && handleSend()}
-          placeholder="Ask about tournaments..." 
-          className="flex-1 bg-[#1a1a1a] border border-[#333] rounded-xl px-4 py-2 text-sm focus:outline-none focus:border-[var(--rubber-red)] transition-colors"
+          placeholder="Ask about tournaments..."
+          disabled={isLoading}
+          className="flex-1 bg-[#1a1a1a] border border-[#333] rounded-xl px-4 py-2 text-sm focus:outline-none focus:border-[var(--rubber-red)] transition-colors disabled:opacity-50"
         />
-        <button 
+        <button
           onClick={handleSend}
-          className="p-2 rounded-xl bg-[var(--rubber-red)] text-white hover:bg-[var(--rubber-dark)] transition-colors"
+          disabled={isLoading}
+          className="p-2 rounded-xl bg-[var(--rubber-red)] text-white hover:bg-[var(--rubber-dark)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <Send size={18} />
         </button>

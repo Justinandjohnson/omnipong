@@ -1,7 +1,9 @@
 "use client";
 import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Flame, Anchor, Scale, AlertTriangle } from 'lucide-react';
+import { Flame, Scale, AlertTriangle } from 'lucide-react';
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 interface PatternData {
     comebacks: number;
@@ -15,7 +17,7 @@ export default function PatternAnalysis({ source = "usatt" }: { source?: string 
 
   useEffect(() => {
     setLoading(true);
-    fetch(`http://localhost:8000/stats?source=${source}`)
+    fetch(`${API_URL}/stats?source=${source}`)
       .then(res => res.json())
       .then(d => {
         setPatterns(d.patterns);

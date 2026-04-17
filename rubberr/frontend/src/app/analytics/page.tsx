@@ -3,7 +3,9 @@ import Sidebar from "@/components/Sidebar";
 import CareerGraph from "@/components/CareerGraph";
 import RubberrStats from "@/components/RubberrStats";
 import { useEffect, useState } from "react";
-import { ArrowUpRight, ArrowDownRight, Minus, Flame, AlertTriangle, Scale } from "lucide-react";
+import { Flame, AlertTriangle, Scale } from "lucide-react";
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 export default function AnalyticsPage() {
   const [matches, setMatches] = useState<any[]>([]);
@@ -16,8 +18,8 @@ export default function AnalyticsPage() {
     setLoading(true);
     // Parallel Fetch
     Promise.all([
-        fetch('http://localhost:8000/matches').then(r => r.json()),
-        fetch('http://localhost:8000/user').then(r => r.json())
+        fetch(`${API_URL}/matches`).then(r => r.json()),
+        fetch(`${API_URL}/user`).then(r => r.json())
     ]).then(([matchesData, userData]) => {
         // Filter matches based on viewMode
         const targetSources = viewMode === 'usatt' ? ['omnipong'] : ['stadium', 'stadium_league'];

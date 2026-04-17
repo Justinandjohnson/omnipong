@@ -3,6 +3,8 @@ import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { MessageSquare, X, Send, Loader2, Mic } from 'lucide-react';
 
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+
 interface Message {
   role: 'user' | 'agent';
   content: string;
@@ -35,7 +37,7 @@ export default function ChatAgent({ onSwitchToVoice }: ChatAgentProps) {
 
     try {
       // Call the backend chat endpoint with full tool access
-      const response = await fetch('http://localhost:8000/chat', {
+      const response = await fetch(`${API_URL}/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: userMessage })

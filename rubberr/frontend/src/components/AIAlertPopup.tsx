@@ -1,6 +1,8 @@
-import React, { useState, useEffect } from 'react';
-import { Bell, Sparkles, X, Check, Loader2, Calendar, MapPin, Trophy } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Sparkles, X, Check, Loader2, Calendar, MapPin, Trophy } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 interface EventDetail {
     name: string;
@@ -34,7 +36,7 @@ export default function AIAlertPopup() {
     useEffect(() => {
         const fetchAlerts = async () => {
             try {
-                const res = await fetch('http://localhost:8000/notifications');
+                const res = await fetch(`${API_URL}/notifications`);
                 const data = await res.json();
                 if (data.length > 0) {
                     setAlerts(data);
@@ -53,7 +55,7 @@ export default function AIAlertPopup() {
     const handleDismiss = async () => {
         if (!currentAlert) return;
         try {
-            await fetch(`http://localhost:8000/notifications/${currentAlert.id}/read`, { method: 'POST' });
+            await fetch(`${API_URL}/notifications/${currentAlert.id}/read`, { method: 'POST' });
             const remaining = alerts.filter(a => a.id !== currentAlert.id);
             setAlerts(remaining);
             setCurrentAlert(remaining.length > 0 ? remaining[0] : null);
@@ -67,7 +69,7 @@ export default function AIAlertPopup() {
         setLoading(true);
         try {
             const eventNames = currentAlert.content.recommendation?.recommended_events?.map((e: any) => typeof e === 'string' ? e : e.name) || [];
-            const response = await fetch(`http://localhost:8000/tournaments/signup?tournament_title=${encodeURIComponent(currentAlert.content.title)}`, {
+            const response = await fetch(`${API_URL}/tournaments/signup?tournament_title=${encodeURIComponent(currentAlert.content.title)}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(eventNames)

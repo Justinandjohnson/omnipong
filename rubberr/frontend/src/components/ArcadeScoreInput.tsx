@@ -68,7 +68,11 @@ export default function ArcadeScoreInput({ onScoreSubmit }: { onScoreSubmit: () 
                   body: JSON.stringify({ name })
               });
               const data = await res.json();
-              setSearchResult(data.player);
+              if (data.status === 'not_found') {
+                  setSearchResult({ status: 'not_found' });
+              } else {
+                  setSearchResult(data.player);
+              }
           } catch(e) {}
       } else {
           setSearchResult(null);
@@ -256,9 +260,17 @@ export default function ArcadeScoreInput({ onScoreSubmit }: { onScoreSubmit: () 
                             
                             {/* Player Hint */}
                             {searchResult && (
-                                <div className="absolute top-full left-0 mt-2 w-full bg-[#111] border border-[#333] rounded-lg p-2 z-20 text-xs text-gray-400 flex justify-between">
-                                    <span>{searchResult.name}</span>
-                                    <span className="font-bold text-[var(--rubber-accent)]">Rating: {searchResult.rating || 'Est. 1200'}</span>
+                                <div className={`absolute top-full left-0 mt-2 w-full border rounded-lg p-2 z-20 text-xs flex justify-between
+                                    ${searchResult.status === 'not_found' ? 'bg-red-900/20 border-red-500/30 text-red-400' : 'bg-[#111] border-[#333] text-gray-400'}`}>
+                                    
+                                    {searchResult.status === 'not_found' ? (
+                                        <span>User Not Found (Strict Mode)</span>
+                                    ) : (
+                                        <>
+                                            <span>{searchResult.name}</span>
+                                            <span className="font-bold text-[var(--rubber-accent)]">Rating: {searchResult.rating}</span>
+                                        </>
+                                    )}
                                 </div>
                             )}
                         </div>

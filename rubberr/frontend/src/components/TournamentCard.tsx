@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react';
-import { Calendar, MapPin, DollarSign, Trophy, Star, Sparkles, Users, Loader2, Check, FileText } from 'lucide-react';
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+import { Calendar, MapPin, Star, Sparkles, Users, Loader2, Check, FileText } from 'lucide-react';
 
 interface TournamentProps {
     title: string;
@@ -15,14 +17,19 @@ interface TournamentProps {
 
 export default function TournamentCard({ title, location, date, status, cost, events, tier, flyer_url, aiInsights }: TournamentProps) {
   const [loading, setLoading] = useState(false);
-  const [signedUp, setSignedUp] = useState(false);
+  const [signedUp, setSignedUp] = useState(status === 'Entered');
+
+  // Update effect if status prop changes
+  useEffect(() => {
+      if (status === 'Entered') setSignedUp(true);
+  }, [status]);
 
   const handleSignup = async () => {
       setLoading(true);
       try {
           // Extract event names from objects
           const recommendedEvents = aiInsights?.recommended_events?.map((e: any) => e.name) || [];
-          const response = await fetch(`http://localhost:8000/tournaments/signup?tournament_title=${encodeURIComponent(title)}`, {
+          const response = await fetch(`${API_URL}/tournaments/signup?tournament_title=${encodeURIComponent(title)}`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify(recommendedEvents)
