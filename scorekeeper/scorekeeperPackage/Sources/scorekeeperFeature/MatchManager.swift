@@ -106,6 +106,7 @@ public final class MatchManager: NSObject {
     private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
     private var recognitionTask: SFSpeechRecognitionTask?
     private let audioEngine = AVAudioEngine()
+    private var hasConfiguredAudioSession = false
 
     // MARK: - Persistence Keys
     private let matchHistoryKey = "TableTennisMatchHistory"
@@ -118,7 +119,6 @@ public final class MatchManager: NSObject {
 
     public override init() {
         super.init()
-        setupAudioSession()
         loadMatchHistory()
 
         NotificationCenter.default.addObserver(
@@ -127,6 +127,10 @@ public final class MatchManager: NSObject {
             name: AVAudioSession.routeChangeNotification,
             object: nil
         )
+    }
+
+    deinit {
+        NotificationCenter.default.removeObserver(self)
     }
 
     @objc private nonisolated func handleAudioRouteChange(notification: Notification) {
@@ -146,6 +150,7 @@ public final class MatchManager: NSObject {
     }
 
     private func updatePreferredInput() {
+        guard hasConfiguredAudioSession else { return }
         do {
             let availableInputs = audioSession.availableInputs ?? []
             if let bluetoothInput = availableInputs.first(where: {
@@ -161,26 +166,122 @@ public final class MatchManager: NSObject {
     }
 
     private func setupAudioSession() {
+        guard !hasConfiguredAudioSession else { return }
         do {
             try audioSession.setCategory(
                 .playAndRecord,
                 mode: .spokenAudio,
-                options: [.allowBluetooth, .allowBluetoothA2DP, .defaultToSpeaker, .duckOthers]
+                options: [.allowBluetoothHFP, .allowBluetoothA2DP, .defaultToSpeaker, .duckOthers]
             )
             try audioSession.setPreferredIOBufferDuration(0.005)
             try audioSession.setPreferredSampleRate(44100)
             try audioSession.setActive(true)
+            hasConfiguredAudioSession = true
             updatePreferredInput()
-
-            if #available(iOS 17.0, *) {
-                AVAudioApplication.requestRecordPermission { _ in }
-            } else {
-                audioSession.requestRecordPermission { _ in }
-            }
-
-            SFSpeechRecognizer.requestAuthorization { _ in }
         } catch {
             print("Failed to set up audio session: \(error)")
+        }
+    }
+
+    private func requestRecordPermission() async -> Bool {
+        if #available(iOS 17.0, *) {
+            return await withCheckedContinuation { continuation in
+                AVAudioApplication.requestRecordPermission { granted in
+                    continuation.resume(returning: granted)
+                }
+            }
+        } else {
+            return await withCheckedContinuation { continuation in
+                audioSession.requestRecordPermission { granted in
+                    continuation.resume(returning: granted)
+                }
+            }
+        }
+    }
+
+    private func requestSpeechPermission() async -> Bool {
+        switch SFSpeechRecognizer.authorizationStatus() {
+        case .authorized:
+            return true
+        case .notDetermined:
+            return await withCheckedContinuation { continuation in
+                SFSpeechRecognizer.requestAuthorization { status in
+                    continuation.resume(returning: status == .authorized)
+                }
+            }
+        case .denied, .restricted:
+            return false
+        @unknown default:
+            return false
+        }
+    }
+
+    private func prepareRecordingIfNeeded() async -> Bool {
+        setupAudioSession()
+
+        async let micPermission = requestRecordPermission()
+        async let speechPermission = requestSpeechPermission()
+
+        let micGranted = await micPermission
+        let speechGranted = await speechPermission
+        let isReady = micGranted && speechGranted
+        if !isReady {
+            isProcessing = false
+            lastTranscript = "Enable microphone and speech recognition to use voice scoring."
+        }
+        return isReady
+    }
+
+    private func beginRecording() {
+        audioEngine.stop()
+        audioEngine.inputNode.removeTap(onBus: 0)
+        recognitionTask?.cancel()
+        recognitionTask = nil
+
+        let inputNode = audioEngine.inputNode
+        try? inputNode.setVoiceProcessingEnabled(true)
+
+        recognitionRequest = SFSpeechAudioBufferRecognitionRequest()
+        guard let recognitionRequest else {
+            isProcessing = false
+            return
+        }
+        recognitionRequest.shouldReportPartialResults = true
+        recognitionRequest.addsPunctuation = true
+        recognitionRequest.requiresOnDeviceRecognition = true
+
+        recognitionTask = speechRecognizer?.recognitionTask(with: recognitionRequest) { [weak self] result, error in
+            guard let self else { return }
+            if let result {
+                Task { @MainActor in
+                    self.lastTranscript = result.bestTranscription.formattedString
+                }
+            }
+            if error != nil || result?.isFinal == true {
+                Task { @MainActor in
+                    self.stopAudioEngine()
+                }
+            }
+        }
+
+        let recordingFormat = inputNode.outputFormat(forBus: 0)
+        let capturedRequest = recognitionRequest
+        inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { buffer, _ in
+            capturedRequest.append(buffer)
+        }
+
+        audioEngine.prepare()
+
+        do {
+            try audioEngine.start()
+            withAnimation(.spring(response: 0.4, dampingFraction: 0.6)) {
+                self.isRecording = true
+                self.isProcessing = false
+            }
+        } catch {
+            print("❌ Could not start audio engine: \(error)")
+            isProcessing = false
+            stopAudioEngine()
         }
     }
 
@@ -247,52 +348,16 @@ public final class MatchManager: NSObject {
     // MARK: - Recording Control
 
     public func startRecording() {
-        audioEngine.stop()
-        audioEngine.inputNode.removeTap(onBus: 0)
-        recognitionTask?.cancel()
-        recognitionTask = nil
+        guard !isRecording else { return }
 
-        let inputNode = audioEngine.inputNode
-        try? inputNode.setVoiceProcessingEnabled(true)
+        isProcessing = true
+        lastTranscript = "Preparing microphone..."
 
-        recognitionRequest = SFSpeechAudioBufferRecognitionRequest()
-        guard let recognitionRequest else { return }
-        recognitionRequest.shouldReportPartialResults = true
-        recognitionRequest.addsPunctuation = true
-        recognitionRequest.requiresOnDeviceRecognition = true
-
-        recognitionTask = speechRecognizer?.recognitionTask(with: recognitionRequest) { [weak self] result, error in
+        Task { @MainActor [weak self] in
             guard let self else { return }
-            if let result {
-                Task { @MainActor in
-                    self.lastTranscript = result.bestTranscription.formattedString
-                }
+            if await self.prepareRecordingIfNeeded() {
+                self.beginRecording()
             }
-            if error != nil || result?.isFinal == true {
-                Task { @MainActor in
-                    self.stopAudioEngine()
-                }
-            }
-        }
-
-        let recordingFormat = inputNode.outputFormat(forBus: 0)
-        // Capture the request directly — append() is safe to call from the audio thread.
-        let capturedRequest = recognitionRequest
-        inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { buffer, _ in
-            capturedRequest?.append(buffer)
-        }
-
-        audioEngine.prepare()
-
-        do {
-            try audioEngine.start()
-            withAnimation(.spring(response: 0.4, dampingFraction: 0.6)) {
-                self.isRecording = true
-                self.isProcessing = false
-            }
-        } catch {
-            print("❌ Could not start audio engine: \(error)")
-            stopAudioEngine()
         }
     }
 

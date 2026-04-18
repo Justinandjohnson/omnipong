@@ -33,14 +33,14 @@ public struct SMSView: UIViewControllerRepresentable {
             self.completion = completion
         }
 
-        public func messageComposeViewController(
+        public nonisolated func messageComposeViewController(
             _ controller: MFMessageComposeViewController,
             didFinishWith result: MessageComposeResult
         ) {
             let cb = completion
-            controller.dismiss(animated: true) {
-                if let cb {
-                    Task { @MainActor in cb(result) }
+            Task { @MainActor in
+                controller.dismiss(animated: true) {
+                    cb?(result)
                 }
             }
         }

@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
-import VoiceAgentWrapper from "@/components/VoiceAgentWrapper";
+import DeferredVoiceAgent from "@/components/DeferredVoiceAgent";
 
 import { ArcadeProvider } from "@/context/ArcadeContext";
 
@@ -32,7 +32,7 @@ export default function RootLayout({
       >
         <ArcadeProvider>
           {children}
-          <VoiceAgentWrapper />
+          <DeferredVoiceAgent />
         </ArcadeProvider>
       </body>
     </html>

@@ -31,9 +31,13 @@ public struct VideoBackgroundView: View {
         .onAppear {
             setupLoopingVideo()
         }
+        .onDisappear {
+            player?.pause()
+        }
     }
 
     private func setupLoopingVideo() {
+        guard player == nil else { return }
         guard let url = Bundle.main.url(forResource: "background", withExtension: "mp4") else {
             errorMessage = "Background video not found."
             return

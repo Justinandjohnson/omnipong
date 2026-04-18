@@ -1,21 +1,35 @@
 "use client";
+import dynamic from "next/dynamic";
 import Sidebar from "@/components/Sidebar";
 import CalendarView from "@/components/CalendarView";
-import PatternAnalysis from "@/components/PatternAnalysis";
 import CareerGraph from "@/components/CareerGraph";
 import TournamentCard from "@/components/TournamentCard";
 import RubberrStats from "@/components/RubberrStats";
-import PracticePartners from "@/components/PracticePartners";
-import AIAlertPopup from "@/components/AIAlertPopup";
 import { useEffect, useState } from "react";
-import { AlertCircle } from "lucide-react";
+import { AlertCircle, LocateFixed } from "lucide-react";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 import { useArcade } from "@/context/ArcadeContext";
 import ArcadeScoreInput from "@/components/ArcadeScoreInput";
 import ArcadeMatchList from "@/components/ArcadeMatchList";
-import DrillLab from "@/components/DrillLab";
+
+const PracticePartners = dynamic(() => import("@/components/PracticePartners"), {
+  loading: () => <SkeletonCard />,
+});
+
+const DrillLab = dynamic(() => import("@/components/DrillLab"), {
+  loading: () => <SkeletonCard />,
+});
+
+const PatternAnalysis = dynamic(() => import("@/components/PatternAnalysis"), {
+  loading: () => <SkeletonCard />,
+});
+
+const AIAlertPopup = dynamic(() => import("@/components/AIAlertPopup"), {
+  ssr: false,
+  loading: () => null,
+});
 
 // Skeleton Loading Components
 const SkeletonCard = () => (
@@ -89,6 +103,8 @@ export default function Home() {
       console.warn('Cache write failed:', e);
     }
   };
+
+  const cachedLocationKey = "user_location";
 
   // Simple hash function to detect data changes
   const hashData = (data: any): string => {
@@ -198,11 +214,15 @@ export default function Home() {
     // Load from cache immediately for instant UI
     const cachedUser = getCachedData('user');
     const cachedTournaments = getCachedData('tournaments');
+    const cachedLocation = getCachedData(cachedLocationKey);
     
     if (cachedUser) setUser(cachedUser);
     if (cachedTournaments) {
       setAllTournaments(cachedTournaments);
       setTournaments(cachedTournaments.slice(0, 3));
+    }
+    if (cachedLocation) {
+      setLocation(cachedLocation);
     }
 
     // If we have cached data, consider page loaded
@@ -213,58 +233,60 @@ export default function Home() {
     // Initial fetch - use smart fetch to only update if data changed
     Promise.all([
       smartFetchUser(),
-      smartFetchTournaments()
+      smartFetchTournaments(cachedLocation?.state)
     ]).then(() => setLoading(false))
       .catch(err => {
         console.error("Initial data fetch error:", err);
         setLoading(false);
       });
+  }, []);
 
-    // Background: Get location and refine tournament filter (non-blocking)
-    if (navigator.geolocation) {
-      setLoadingLoc(true);
-      navigator.geolocation.getCurrentPosition(async (position) => {
-        const { latitude, longitude } = position.coords;
-        
-        // Reverse Geocode to get State (non-blocking)
-        try {
-          const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`);
-          const data = await res.json();
-          const stateName = data.address?.state;
-          
-          setLocation({ lat: latitude, lng: longitude, state: stateName });
-          
-          // Refetch tournaments with state filter if we got a state
-          if (stateName) {
-            smartFetchTournaments(stateName);
-          }
-        } catch (err) {
-          console.error("Reverse geocode failed", err);
-          setLocation({ lat: latitude, lng: longitude });
-        } finally {
-          setLoadingLoc(false);
-        }
-      }, (err) => {
-        console.error("Location permission denied", err);
-        setLoadingLoc(false);
-      });
-    }
-
-    // Background refresh: Poll every 30 seconds for updates, but only update UI on changes
+  useEffect(() => {
     const refreshInterval = setInterval(async () => {
+      if (document.hidden) return;
+
       const userChanged = await smartFetchUser();
       const tournamentsChanged = await smartFetchTournaments(location?.state);
-      
-      // Show update indicator if new data found (but not on initial load)
+
       if ((userChanged || tournamentsChanged) && !loading) {
         setHasUpdates(true);
-        // Auto-hide indicator after 5 seconds
         setTimeout(() => setHasUpdates(false), 5000);
       }
-    }, 30000);
+    }, 60000);
 
     return () => clearInterval(refreshInterval);
-  }, []);
+  }, [location?.state, loading]);
+
+  const handleDetectLocation = () => {
+    if (!navigator.geolocation || loadingLoc) return;
+
+    setLoadingLoc(true);
+    navigator.geolocation.getCurrentPosition(async (position) => {
+      const { latitude, longitude } = position.coords;
+
+      try {
+        const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`);
+        const data = await res.json();
+        const stateName = data.address?.state;
+        const nextLocation = { lat: latitude, lng: longitude, state: stateName };
+
+        setLocation(nextLocation);
+        setCachedData(cachedLocationKey, nextLocation);
+
+        await smartFetchTournaments(stateName, true);
+      } catch (err) {
+        console.error("Reverse geocode failed", err);
+        const fallbackLocation = { lat: latitude, lng: longitude };
+        setLocation(fallbackLocation);
+        setCachedData(cachedLocationKey, fallbackLocation);
+      } finally {
+        setLoadingLoc(false);
+      }
+    }, (err) => {
+      console.error("Location permission denied", err);
+      setLoadingLoc(false);
+    });
+  };
 
   const handleSyncOmni = async () => {
       try {
@@ -352,7 +374,20 @@ export default function Home() {
                   <h2 className="text-sm font-bold text-gray-500 uppercase tracking-wider">
                      {location?.state ? `Opportunities in ${location.state}` : 'Upcoming Opportunities'}
                   </h2>
-                  {loadingLoc && <span className="text-xs animate-pulse text-[var(--rubber-accent)]">Locating...</span>}
+                  <div className="flex items-center gap-3">
+                    {location?.state && (
+                      <span className="text-xs text-gray-500">Filtered to {location.state}</span>
+                    )}
+                    <button
+                      type="button"
+                      onClick={handleDetectLocation}
+                      disabled={loadingLoc}
+                      className="inline-flex items-center gap-2 rounded-full border border-[#333] px-3 py-1.5 text-xs text-gray-300 transition hover:border-[var(--rubber-accent)] hover:text-white disabled:cursor-wait disabled:opacity-60"
+                    >
+                      <LocateFixed size={14} />
+                      {loadingLoc ? "Locating..." : location?.state ? "Refresh location" : "Use my location"}
+                    </button>
+                  </div>
                 </div>
                 
                 {isArcadeMode && (
