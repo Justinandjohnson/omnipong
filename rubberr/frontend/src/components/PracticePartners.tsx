@@ -8,12 +8,14 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 export default function PracticePartners({ limit }: { limit?: number }) {
   const [partners, setPartners] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [sendingId, setSendingId] = useState<number | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [phoneNumber, setPhoneNumber] = useState("");
   const [scoutingPlayer, setScoutingPlayer] = useState<string | null>(null);
 
   useEffect(() => {
+    setLoadError(null);
     fetch(`${API_URL}/user`)
       .then(res => res.json())
       .then(data => {
@@ -21,14 +23,17 @@ export default function PracticePartners({ limit }: { limit?: number }) {
       })
       .catch(() => {});
 
-    // Mock partner data for now as strictly not in DB yet
-    const mockPartners = [
-      { player_name: "Steve Smith", rating: 1180, reason: "Close match, good practice for pressure." },
-      { player_name: "Alex Wong", rating: 1250, reason: "Plays aggressive, helps your defense." },
-      { player_name: "Maria Garcia", rating: 1120, reason: "Excellent placement, improves your footwork." }
-    ];
-    setPartners(limit ? mockPartners.slice(0, limit) : mockPartners);
-    setLoading(false);
+    fetch(`${API_URL}/tools/practice_partners?limit=${limit || 5}`)
+      .then(res => res.json())
+      .then(data => {
+        setPartners(Array.isArray(data?.recommendations) ? data.recommendations : []);
+      })
+      .catch((error) => {
+        console.error("Failed to fetch practice partners:", error);
+        setPartners([]);
+        setLoadError("Practice partner recommendations are unavailable right now.");
+      })
+      .finally(() => setLoading(false));
   }, [limit]);
 
   const handleRemind = async (partner: any, index: number) => {
@@ -90,6 +95,17 @@ export default function PracticePartners({ limit }: { limit?: number }) {
       </div>
 
       <div className="space-y-4">
+        {!loading && partners.length === 0 && (
+          <div className="bg-[#222] border border-[#333] rounded-xl p-4">
+            <p className="text-sm font-semibold text-white">No practice partner recommendations yet.</p>
+            <p className="mt-1 text-xs text-gray-400">
+              Sync more match history so Rubberr can rank real opponents by competitiveness and training value.
+            </p>
+            {loadError && (
+              <p className="mt-2 text-xs text-red-400">{loadError}</p>
+            )}
+          </div>
+        )}
         {partners.map((p, i) => (
           <div key={i} className="bg-[#222] border border-[#333] rounded-xl p-4 hover:border-[var(--rubber-red)] transition-all">
             <div className="flex justify-between items-start mb-2">

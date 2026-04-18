@@ -17,9 +17,11 @@ interface CareerGraphProps {
 export default function CareerGraph({ onSyncOmni, onSyncLeague, onSyncTournaments, source = "usatt", onSourceChange, hideToggle = false }: CareerGraphProps) {
   const [data, setData] = useState<any[]>([]); // Store full objects { rating, date }
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     setLoading(true);
+    setLoadError(null);
     // Fetch user's rating history instead of match opponent ratings
     let endpoint = `${API_URL}/rating_history?source=usatt`;
     if (source === 'league') endpoint = `${API_URL}/rating_history?source=league`;
@@ -28,40 +30,18 @@ export default function CareerGraph({ onSyncOmni, onSyncLeague, onSyncTournament
     fetch(endpoint)
       .then(res => res.json())
       .then(d => {
-        let history = d.map((item: any) => ({
+        const history = Array.isArray(d) ? d.map((item: any) => ({
              rating: item.rating, 
              date: item.date 
-        }));
-        
-        // Mock if empty (with source specific defaults)
-        if (history.length === 0) {
-            const baseRating = source === 'usatt' ? 1200 : 1000;
-            // Create mock progression
-            history = [
-                { rating: baseRating, date: "2025-01-15" },
-                { rating: baseRating + 20, date: "2025-02-10" },
-                { rating: baseRating + 50, date: "2025-03-05" },
-                { rating: baseRating + 40, date: "2025-04-20" },
-                { rating: baseRating + 80, date: "2025-05-12" },
-                { rating: baseRating + 100, date: "2025-06-01" },
-            ];
-        }
-        
+        })) : [];
+
         setData(history);
         setLoading(false);
       })
       .catch(e => {
         console.error("Failed to fetch rating history:", e);
-        // Fallback to mock data on error so UI doesn't break
-        const baseRating = source === 'usatt' ? 1200 : 1000;
-        setData([
-            { rating: baseRating, date: "2025-01-15" },
-            { rating: baseRating + 20, date: "2025-02-10" },
-            { rating: baseRating + 50, date: "2025-03-05" },
-            { rating: baseRating + 40, date: "2025-04-20" },
-            { rating: baseRating + 80, date: "2025-05-12" },
-            { rating: baseRating + 100, date: "2025-06-01" },
-        ]);
+        setData([]);
+        setLoadError("Rating history is unavailable right now.");
         setLoading(false);
       });
   }, [source]);
@@ -81,6 +61,49 @@ export default function CareerGraph({ onSyncOmni, onSyncLeague, onSyncTournament
   const trend = calculateTrend();
 
   if (loading) return <div className="h-full w-full animate-pulse bg-[#1a1a1a] rounded-2xl"></div>;
+
+  if (data.length < 2) {
+    return (
+      <div className="w-full h-full relative overflow-hidden bg-[#0a0a0a] border-b border-[#333]">
+        <div className="absolute inset-0 opacity-20 pointer-events-none"
+             style={{ backgroundImage: 'linear-gradient(#333 1px, transparent 1px), linear-gradient(90deg, #333 1px, transparent 1px)', backgroundSize: '40px 40px' }}>
+        </div>
+
+        <div className="absolute inset-x-0 top-0 p-6 flex justify-between items-start z-20 pointer-events-none">
+          <div className="pointer-events-auto pl-16">
+            <h2 className="text-3xl font-bold text-white tracking-tight">Rating Trajectory</h2>
+            <p className="text-[#a0a0a0] text-sm mt-1">
+              Season 2025 • <span className="text-gray-500 font-bold">Waiting for real data</span>
+            </p>
+          </div>
+
+          <div className="flex gap-3 pointer-events-auto">
+            <button onClick={onSyncLeague} title="Sync League Players with USATT" className="flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-blue-400 border border-blue-500/20 rounded hover:bg-blue-500/10 hover:text-blue-300 transition-colors">
+              <RefreshCw size={12} /> League Sync
+            </button>
+            <button onClick={onSyncTournaments} title="Sync Official Tournaments" className="flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-purple-400 border border-purple-500/20 rounded hover:bg-purple-500/10 hover:text-purple-300 transition-colors">
+              <RefreshCw size={12} /> Tourney Sync
+            </button>
+            <button onClick={onSyncOmni} className="flex items-center gap-2 px-3 py-1.5 text-xs font-bold text-[var(--rubber-red)] border border-[var(--rubber-red)] rounded hover:bg-[var(--rubber-red)] hover:text-white transition-colors">
+              <RefreshCw size={12} /> Quick Sync
+            </button>
+          </div>
+        </div>
+
+        <div className="h-full w-full flex items-center justify-center px-8 text-center">
+          <div className="max-w-md">
+            <p className="text-lg font-semibold text-white">No rating trajectory available yet.</p>
+            <p className="mt-2 text-sm text-gray-400">
+              Sync official match history or league data to populate this graph with real results.
+            </p>
+            {loadError && (
+              <p className="mt-3 text-xs text-red-400">{loadError}</p>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   // SVG Logic
   const width = 1000;
