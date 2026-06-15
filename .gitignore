@@ -1,3 +1,54 @@
+# ── Secrets ───────────────────────────────────────────────────────────────────
 .env
+.env.local
+.env.*.local
+*.env
+
+# ── Python ────────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# ── Node / Next.js ────────────────────────────────────────────────────────────
+node_modules/
+.next/
+out/
+dist/
+.npm
+
+# ── iOS / Xcode ───────────────────────────────────────────────────────────────
 **/DerivedData/
 scorekeeper/build/
+*.xcuserstate
+*.xcscheme
+xcuserdata/
+*.orig.*
+
+# ── Database ──────────────────────────────────────────────────────────────────
+*.db
+*.sqlite
+
+# ── Logs / Debug ──────────────────────────────────────────────────────────────
+*.log
+debug_*.log
+debug_*.html
+debug_*.png
+
+# ── Playwright ────────────────────────────────────────────────────────────────
+playwright_data/
+playwright_sync_data/
+test-results/
+
+# ── Media / Large files ───────────────────────────────────────────────────────
+*.mp4
+*.mov
+*.webm
+
+# ── OS ────────────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
