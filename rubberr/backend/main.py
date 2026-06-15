@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
@@ -96,11 +96,15 @@ def _get_user_ai_key(request: Request) -> str | None:
     """Return the user-supplied AI key from the X-User-Api-Key header."""
     return request.headers.get("X-User-Api-Key") or None
 
-# Database connection
-# Priority: env var (for Production/Render) > local sqlite file (Development)
-from models import Activity, Event, Notification, Base
 
-# ... (Previous imports)
+def _require_api_key(request: Request) -> None:
+    """Raise 401 if RUBBERR_API_KEY env var is set and request doesn't match."""
+    required = os.getenv("RUBBERR_API_KEY")
+    if not required:
+        return
+    provided = request.headers.get("X-Api-Key")
+    if provided != required:
+        raise HTTPException(status_code=401, detail="Unauthorized")
 
 # Database connection
 # Priority: env var (for Production/Render) > local sqlite file (Development)
@@ -429,7 +433,7 @@ def mark_notification_read(notif_id: int):
     session = SessionLocal()
     try:
         session.execute(
-            text(f"UPDATE notifications SET is_read = 1 WHERE id = {notif_id}")
+            text("UPDATE notifications SET is_read = 1 WHERE id = :id"), {"id": notif_id}
         )
         session.commit()
         return {"status": "success"}
@@ -888,8 +892,6 @@ def tool_search_players(req: PlayerSearch):
     finally:
         session.close()
 
-        session.close()
-
 
 # --- HELPER: Save Match Logic ---
 def save_arcade_match(
@@ -934,9 +936,9 @@ async def arcade_transcribe(file: UploadFile = File(...)):
     """
     Accepts an audio file, transcribes it, and parses match intent using LLM.
     """
+    temp_filename = f"temp_{file.filename}"
     try:
         # Save temp file
-        temp_filename = f"temp_{file.filename}"
         with open(temp_filename, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
 
@@ -945,9 +947,6 @@ async def arcade_transcribe(file: UploadFile = File(...)):
 
         # Parse
         parsed = await parse_match_intent(transcript)
-
-        # Cleanup
-        os.remove(temp_filename)
 
         return {
             "status": "success",
@@ -964,6 +963,9 @@ async def arcade_transcribe(file: UploadFile = File(...)):
             "transcript": "Error during processing",
             "intent": {},
         }
+    finally:
+        if os.path.exists(temp_filename):
+            os.remove(temp_filename)
 
 
 @app.post("/arcade/process")
@@ -1682,13 +1684,6 @@ async def get_claude_response(user_message: str):
                         elif tool_name == "get_performance_analysis":
                             result = get_tool_analysis()
                         elif tool_name == "search_players":
-                            result = tool_search_players(
-                                PlayerSearch(**tool_input)
-                            )  # Fix: wrap in Pydantic?
-                            # Actually tool_search_players takes PlayerSearch object.
-                            # But tool_input is a dict.
-                            # We need to construct it: tool_search_players(PlayerSearch(name=tool_input['name']))
-                            # Let's check definition. It expects `req: PlayerSearch`.
                             result = tool_search_players(PlayerSearch(**tool_input))
                         elif tool_name == "omnipong_player_search":
                             result = await browser_manager.search_omnipong_player(
@@ -1746,8 +1741,7 @@ async def get_claude_response(user_message: str):
 
 
 @app.post("/chat")
-async def chat_endpoint(msg: ChatMessage):
-    # Wrapper for the new reusable function
+async def chat_endpoint(msg: ChatMessage, _: None = Depends(_require_api_key)):
     response_text = await get_claude_response(msg.message)
     return {"response": response_text}
 
@@ -1880,7 +1874,7 @@ def update_phone(data: PhoneUpdate):
 
 
 @app.get("/players/{player_name}/scouting")
-async def get_player_scouting(player_name: str):
+async def get_player_scouting(player_name: str, _: None = Depends(_require_api_key)):
     """
     Generate an AI scouting report for a specific opponent based on match history.
     """
