@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import DeferredVoiceAgent from "@/components/DeferredVoiceAgent";
+import { DemoBar } from "@/components/DemoBar";
 
 import { ArcadeProvider } from "@/context/ArcadeContext";
 
@@ -31,6 +32,7 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
         <ArcadeProvider>
+          <DemoBar />
           {children}
           <DeferredVoiceAgent />
         </ArcadeProvider>

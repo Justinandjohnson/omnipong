@@ -1,0 +1,35 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: omnipong-backend
+    ports:
+      - "8000:10000" # Map host 8000 to container 10000 (Gunicorn port)
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=sqlite:////app/omnipong.db
+      - PORT=10000
+    volumes:
+      - ./omnipong.db:/app/omnipong.db
+      - ./rubberr/backend:/app/rubberr/backend # Hot reload for backend code if running uvicorn directly, but for prod-like we use the build.
+      # For "easy run" we want stability.
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: omnipong-frontend
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+    depends_on:
+      - backend
+    restart: unless-stopped

@@ -49,6 +49,15 @@ test-results/
 *.mov
 *.webm
 
+# ── Editor ────────────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+
+# ── Debug screenshots ─────────────────────────────────────────────────────────
+signup_verification_failure_after_click.png
+stadium_login_error.png
+rubberr/backend/debug/
+
 # ── OS ────────────────────────────────────────────────────────────────────────
 .DS_Store
 Thumbs.db

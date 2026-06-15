@@ -75,16 +75,26 @@ async def run_script_managed(script_path: str, args: list = None, cwd: str = Non
         return -1, b"", str(e).encode()
 
 
-app = FastAPI()
+app = FastAPI(title="Rubberr — Table Tennis Intelligence")
 
-# Allow CORS for local development
+_LOCAL_ORIGINS = [
+    "http://localhost:3000",
+    "http://localhost:3001",
+    "http://localhost:3002",
+]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:3002", "https://omnipong-frontend.onrender.com"],
-    allow_credentials=True,
+    allow_origins=_LOCAL_ORIGINS,
+    allow_origin_regex=r"https://(.*\.onrender\.com|.*\.vercel\.app)",
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+def _get_user_ai_key(request: Request) -> str | None:
+    """Return the user-supplied AI key from the X-User-Api-Key header."""
+    return request.headers.get("X-User-Api-Key") or None
 
 # Database connection
 # Priority: env var (for Production/Render) > local sqlite file (Development)
@@ -115,6 +125,48 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 @app.get("/")
 def read_root():
     return {"status": "Rubberr Backend Running"}
+
+
+@app.get("/demo")
+def get_demo_profile():
+    """Public read-only endpoint: returns the showcase player profile + recent stats.
+    Safe to expose — no PII beyond what's already public on USATT.
+    """
+    session = SessionLocal()
+    try:
+        user_row = session.execute(
+            text("SELECT name as full_name, current_rating as rating, usatt_id FROM users LIMIT 1")
+        ).fetchone()
+
+        stats_row = session.execute(
+            text("""
+                SELECT
+                    COUNT(*) as total_matches,
+                    SUM(CASE WHEN result = 'win' THEN 1 ELSE 0 END) as wins,
+                    SUM(CASE WHEN result = 'loss' THEN 1 ELSE 0 END) as losses
+                FROM matches
+            """)
+        ).fetchone()
+
+        recent = session.execute(
+            text("""
+                SELECT opponent_name, result, match_date, player_score, opponent_score
+                FROM matches
+                ORDER BY match_date DESC
+                LIMIT 10
+            """)
+        ).fetchall()
+
+        return {
+            "player": dict(user_row._mapping) if user_row else {},
+            "stats": dict(stats_row._mapping) if stats_row else {},
+            "recent_matches": [dict(r._mapping) for r in recent],
+            "demo": True,
+        }
+    except Exception as e:
+        return {"error": str(e), "demo": True}
+    finally:
+        session.close()
 
 
 @app.get("/user")
