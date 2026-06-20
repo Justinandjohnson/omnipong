@@ -3,8 +3,6 @@ import { useState, useRef, useEffect } from 'react';
 import { Send } from 'lucide-react';
 import { getAIHeaders } from './DemoBar';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-
 export default function ChatInterface() {
   const [messages, setMessages] = useState([
     { role: 'agent', content: "Hello! I'm Coach Rubberr. I've analyzed your latest match history. Ready to find your next tournament?" }
@@ -29,7 +27,7 @@ export default function ChatInterface() {
     setIsLoading(true);
 
     try {
-      const res = await fetch(`${API_URL}/chat`, {
+      const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...getAIHeaders() },
         body: JSON.stringify({ message: trimmed }),
