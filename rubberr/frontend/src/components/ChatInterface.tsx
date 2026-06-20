@@ -1,6 +1,7 @@
 "use client";
 import { useState, useRef, useEffect } from 'react';
 import { Send } from 'lucide-react';
+import { getAIHeaders } from './DemoBar';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -30,7 +31,7 @@ export default function ChatInterface() {
     try {
       const res = await fetch(`${API_URL}/chat`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...getAIHeaders() },
         body: JSON.stringify({ message: trimmed }),
       });
 

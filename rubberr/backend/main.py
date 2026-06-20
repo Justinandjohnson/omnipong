@@ -1629,19 +1629,22 @@ CLAUDE_TOOLS = [
 ]
 
 
-async def get_claude_response(user_message: str):
+async def get_claude_response(user_message: str, user_key: str = None):
     """
     Reusable logic to get a response from Claude 4 with tools.
     Used by /chat endpoint AND SMS webhook.
+    user_key: caller's own Anthropic key (BYOK); if absent falls back to server key.
     """
-    client = get_anthropic_client()
-    if not client:
-        # Fallback to env var if file not found (Render support)
-        api_key = os.getenv("ANTHROPIC_API_KEY")
-        if api_key:
-            client = anthropic.Anthropic(api_key=api_key)
-        else:
-            return "Error: Anthropic API key not found. Please set ANTHROPIC_API_KEY."
+    if user_key:
+        client = anthropic.Anthropic(api_key=user_key)
+    else:
+        client = get_anthropic_client()
+        if not client:
+            api_key = os.getenv("ANTHROPIC_API_KEY")
+            if api_key:
+                client = anthropic.Anthropic(api_key=api_key)
+            else:
+                return "Error: Anthropic API key not found. Please set ANTHROPIC_API_KEY."
 
     # Use the model that we verified works (reverting to original)
     model = "claude-sonnet-4-5"
@@ -1741,8 +1744,8 @@ async def get_claude_response(user_message: str):
 
 
 @app.post("/chat")
-async def chat_endpoint(msg: ChatMessage, _: None = Depends(_require_api_key)):
-    response_text = await get_claude_response(msg.message)
+async def chat_endpoint(msg: ChatMessage, request: Request, _: None = Depends(_require_api_key)):
+    response_text = await get_claude_response(msg.message, user_key=_get_user_ai_key(request))
     return {"response": response_text}
 
 
