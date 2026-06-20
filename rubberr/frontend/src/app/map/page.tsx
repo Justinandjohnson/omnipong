@@ -12,7 +12,7 @@ export default function MapPage() {
   return (
     <div className="bg-[var(--background)] min-h-screen text-[var(--foreground)] flex">
       <Sidebar />
-      <main className="flex-1 ml-64 h-screen flex flex-col">
+      <main className="flex-1 md:ml-64 pt-14 md:pt-0 h-screen flex flex-col">
         <div className="flex-1 p-0 relative">
              <MapView />
              

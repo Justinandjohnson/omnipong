@@ -71,7 +71,7 @@ export default function ScoreboardPage() {
   return (
     <div className="bg-[var(--background)] min-h-screen text-[var(--foreground)] flex">
       <Sidebar />
-      <main className="flex-1 ml-64 p-8 overflow-y-auto">
+      <main className="flex-1 md:ml-64 pt-14 md:pt-0 p-8 overflow-y-auto">
         <header className="mb-8 flex justify-between items-end">
           <div>
             <h1 className="text-3xl font-bold mb-2 flex items-center gap-3">

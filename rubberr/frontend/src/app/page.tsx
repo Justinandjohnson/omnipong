@@ -345,7 +345,7 @@ export default function Home() {
         </div>
       )}
       
-      <main className="flex-1 ml-64 overflow-y-auto">
+      <main className="flex-1 md:ml-64 pt-14 md:pt-0 overflow-y-auto">
         
         {/* Hero Section (Full Width, No Padding) */}
         <div className="w-full h-[400px] relative">

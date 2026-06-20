@@ -112,7 +112,7 @@ export default function TournamentsPage() {
   return (
     <div className="bg-[var(--background)] min-h-screen text-[var(--foreground)] flex">
       <Sidebar />
-      <main className="flex-1 ml-64 p-8 overflow-y-auto h-screen">
+      <main className="flex-1 md:ml-64 pt-14 md:pt-0 p-8 overflow-y-auto h-screen">
         <header className="mb-8">
           <h1 className="text-3xl font-bold mb-2">Tournament Finder</h1>
           <p className="text-gray-400">Discover and register for upcoming events.</p>

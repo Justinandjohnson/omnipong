@@ -1,8 +1,8 @@
 "use client";
-import React from 'react';
+import React, { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Home, BarChart2, Settings, Trophy, Map as MapIcon, MessageCircle, Gamepad2 } from 'lucide-react';
+import { Home, BarChart2, Settings, Trophy, Map as MapIcon, MessageCircle, Gamepad2, Menu, X } from 'lucide-react';
 import { useArcade } from "@/context/ArcadeContext";
 
 function NavItem({ icon, label, href, active }: { icon: React.ReactNode, label: string, href: string, active?: boolean }) {
@@ -49,28 +49,56 @@ function ArcadeToggle() {
 
 export default function Sidebar() {
   const pathname = usePathname();
+  const [isOpen, setIsOpen] = useState(false);
+
+  const close = () => setIsOpen(false);
 
   return (
-    <div className="h-screen w-64 bg-[var(--sidebar)] border-r border-[#333] flex flex-col fixed left-0 top-0">
-      <div className="p-6">
-        <h1 className="text-2xl font-bold bg-gradient-to-r from-[var(--rubber-red)] to-[var(--rubber-accent)] bg-clip-text text-transparent">
-          Rubberr.
-        </h1>
-        <p className="text-xs text-gray-500 mt-1">AI Table Tennis Coach</p>
-      </div>
+    <>
+      {/* Mobile hamburger button */}
+      <button
+        className="md:hidden fixed top-3 left-3 z-50 p-2 bg-[var(--sidebar)] rounded-lg border border-[#333] text-gray-300"
+        onClick={() => setIsOpen(o => !o)}
+        aria-label="Toggle menu"
+      >
+        {isOpen ? <X size={20} /> : <Menu size={20} />}
+      </button>
 
-      <nav className="flex-1 px-4 space-y-2">
-        <NavItem icon={<Home size={20} />} label="Dashboard" href="/" active={pathname === '/'} />
-        <NavItem icon={<MapIcon size={20} />} label="Map" href="/map" active={pathname === '/map'} />
-        <NavItem icon={<Trophy size={20} />} label="Tournaments" href="/tournaments" active={pathname === '/tournaments'} />
-        <NavItem icon={<BarChart2 size={20} />} label="Analytics" href="/analytics" active={pathname === '/analytics'} />
-        <NavItem icon={<MessageCircle size={20} />} label="AI Coach" href="/chat" active={pathname === '/chat'} />
-      </nav>
+      {/* Mobile backdrop */}
+      {isOpen && (
+        <div
+          className="md:hidden fixed inset-0 bg-black/60 z-40"
+          onClick={close}
+        />
+      )}
 
-      <div className="p-4 border-t border-[#333]">
-        <NavItem icon={<Settings size={20} />} label="Settings" href="/settings" active={pathname === '/settings'} />
-        <ArcadeToggle />
+      {/* Sidebar panel */}
+      <div className={`
+        h-screen w-64 bg-[var(--sidebar)] border-r border-[#333] flex flex-col fixed left-0 top-0 z-50
+        transition-transform duration-300 ease-in-out
+        ${isOpen ? 'translate-x-0' : '-translate-x-full'}
+        md:translate-x-0
+      `}>
+        <div className="p-6 pt-5">
+          <h1 className="text-2xl font-bold bg-gradient-to-r from-[var(--rubber-red)] to-[var(--rubber-accent)] bg-clip-text text-transparent">
+            Rubberr.
+          </h1>
+          <p className="text-xs text-gray-500 mt-1">AI Table Tennis Coach</p>
+        </div>
+
+        <nav className="flex-1 px-4 space-y-2">
+          <NavItem icon={<Home size={20} />} label="Dashboard" href="/" active={pathname === '/'} />
+          <NavItem icon={<MapIcon size={20} />} label="Map" href="/map" active={pathname === '/map'} />
+          <NavItem icon={<Trophy size={20} />} label="Tournaments" href="/tournaments" active={pathname === '/tournaments'} />
+          <NavItem icon={<BarChart2 size={20} />} label="Analytics" href="/analytics" active={pathname === '/analytics'} />
+          <NavItem icon={<MessageCircle size={20} />} label="AI Coach" href="/chat" active={pathname === '/chat'} />
+        </nav>
+
+        <div className="p-4 border-t border-[#333]">
+          <NavItem icon={<Settings size={20} />} label="Settings" href="/settings" active={pathname === '/settings'} />
+          <ArcadeToggle />
+        </div>
       </div>
-    </div>
+    </>
   );
 }
