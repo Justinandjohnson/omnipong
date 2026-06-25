@@ -38,6 +38,34 @@ class ProcessText(BaseModel):
     text: str
 
 
+class CredentialUpdate(BaseModel):
+    service: str  # "omnipong" or "stadium"
+    username: str
+    password: str
+
+
+# ponytail: local credentials file — never committed, per-machine only
+CREDS_FILE = os.path.join(os.path.dirname(__file__), "../../.credentials.json")
+
+def load_local_creds():
+    try:
+        with open(CREDS_FILE) as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+
+def save_local_creds(creds):
+    with open(CREDS_FILE, "w") as f:
+        json.dump(creds, f, indent=2)
+
+def get_credential(service: str, key: str):
+    """Check local creds file first, fall back to env vars."""
+    creds = load_local_creds()
+    if service in creds and key in creds[service]:
+        return creds[service][key]
+    return os.getenv(key)
+
+
 # Initialize BrowserManager for tools
 browser_manager = BrowserManager()
 
@@ -198,6 +226,44 @@ def get_user():
         raise HTTPException(status_code=500, detail=str(e))
     finally:
         session.close()
+
+
+@app.get("/credentials")
+def get_credentials():
+    """Return which services have saved credentials (never returns passwords)."""
+    creds = load_local_creds()
+    return {
+        "omnipong": {"configured": "omnipong" in creds, "username": creds.get("omnipong", {}).get("username", "")},
+        "stadium": {"configured": "stadium" in creds, "username": creds.get("stadium", {}).get("username", "")},
+    }
+
+
+@app.post("/credentials")
+def set_credentials(cred: CredentialUpdate):
+    """Save credentials locally for the agent to use."""
+    creds = load_local_creds()
+    env_map = {
+        "omnipong": {"username": "OMNIPONG_USER", "password": "OMNIPONG_PASS"},
+        "stadium": {"username": "STADIUM_USER", "password": "STADIUM_PASS"},
+    }
+    if cred.service not in env_map:
+        raise HTTPException(status_code=400, detail=f"Unknown service: {cred.service}")
+    keys = env_map[cred.service]
+    creds[cred.service] = {"username": cred.username, "password": cred.password}
+    # Also set env vars so BrowserManager picks them up immediately
+    os.environ[keys["username"]] = cred.username
+    os.environ[keys["password"]] = cred.password
+    save_local_creds(creds)
+    return {"status": "saved", "service": cred.service}
+
+
+@app.delete("/credentials/{service}")
+def delete_credentials(service: str):
+    """Remove saved credentials for a service."""
+    creds = load_local_creds()
+    creds.pop(service, None)
+    save_local_creds(creds)
+    return {"status": "removed", "service": service}
 
 
 @app.get("/matches")

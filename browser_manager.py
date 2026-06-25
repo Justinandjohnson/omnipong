@@ -1,9 +1,27 @@
 import os
+import json
 import asyncio
 from playwright.async_api import async_playwright
 from dotenv import load_dotenv
 
 load_dotenv()
+
+# ponytail: check local credentials file, fall back to env vars
+def _get_cred(env_key):
+    creds_file = os.path.join(os.path.dirname(__file__), ".credentials.json")
+    try:
+        with open(creds_file) as f:
+            creds = json.load(f)
+        key_map = {"OMNIPONG_USER": ("omnipong", "username"), "OMNIPONG_PASS": ("omnipong", "password"),
+                    "STADIUM_USER": ("stadium", "username"), "STADIUM_PASS": ("stadium", "password")}
+        if env_key in key_map:
+            svc, field = key_map[env_key]
+            val = creds.get(svc, {}).get(field)
+            if val:
+                return val
+    except (FileNotFoundError, json.JSONDecodeError):
+        pass
+    return os.getenv(env_key)
 
 class BrowserManager:
     def __init__(self, user_data_dir="./playwright_data"):
@@ -19,7 +37,17 @@ class BrowserManager:
             headless=headless,
             viewport={'width': 1280, 'height': 720}
         )
+        
+        # Block heavy resources for speed
+        await self.context.route("**/*", self._route_handler)
+        
         return self.context
+
+    async def _route_handler(self, route):
+        if route.request.resource_type in ["image", "media", "font"]:
+            await route.abort()
+        else:
+            await route.continue_()
 
     async def get_page(self):
         if not self.context:
@@ -28,27 +56,55 @@ class BrowserManager:
 
     async def login_omnipong(self):
         page = await self.get_page()
+        print("Navigating to OmniPong Member page...")
         await page.goto("https://www.omnipong.com/members.asp?m=21")
         
-        # Check if already logged in
+        # Check if already logged in by looking for Logout link
         if await page.query_selector('a[title="Log Out"]'):
             print("Already logged in to OmniPong")
             return True
 
-        username = os.getenv("OMNIPONG_USER")
-        password = os.getenv("OMNIPONG_PASS")
+        # Check if we are on the login form
+        login_btn = await page.query_selector('input[name="Action"][value="Log In"]')
+        if not login_btn:
+            print("Login button not found - checking if we were redirected to landing page")
+            # Sometimes OmniPong redirects if already session is active but slightly different
+            if await page.query_selector('a[title="Log Out"]'):
+                return True
+            # Try to go to login directly
+            await page.goto("https://www.omnipong.com/members.asp?m=21")
+            login_btn = await page.wait_for_selector('input[name="Action"][value="Log In"]', timeout=5000)
+
+        username = _get_cred("OMNIPONG_USER")
+        password = _get_cred("OMNIPONG_PASS")
         
         if not username or not password:
             raise ValueError("OmniPong credentials missing in .env")
 
-        await page.fill('input[name="Login_Id"]', username)
-        await page.fill('input[name="Password"]', password)
+        # Smart prefill check as suggested by user
+        current_user = await page.input_value('input[name="Login_Id"]')
+        current_pass = await page.input_value('input[name="Password"]')
+
+        if not current_user or current_user != username:
+            print(f"Filling username: {username}")
+            await page.fill('input[name="Login_Id"]', username)
+        
+        if not current_pass:
+            print("Filling password...")
+            await page.fill('input[name="Password"]', password)
+
+        print("Clicking Log In...")
         await page.click('input[name="Action"][value="Log In"]')
         
         # Verify login
-        await page.wait_for_selector('a[title="Log Out"]', timeout=10000)
-        print("Successfully logged in to OmniPong")
-        return True
+        try:
+            await page.wait_for_selector('a[title="Log Out"]', timeout=10000)
+            print("Successfully logged in to OmniPong")
+            return True
+        except Exception as e:
+            print(f"Login verification failed: {e}")
+            await page.screenshot(path="omnipong_login_error.png")
+            return False
 
     async def login_stadium(self):
         page = await self.get_page()
@@ -60,8 +116,8 @@ class BrowserManager:
              print("Already logged in to StadiumCompete")
              return True
 
-        username = os.getenv("STADIUM_USER")
-        password = os.getenv("STADIUM_PASS")
+        username = _get_cred("STADIUM_USER")
+        password = _get_cred("STADIUM_PASS")
         
         if not username or not password:
             raise ValueError("StadiumCompete credentials missing in .env")
