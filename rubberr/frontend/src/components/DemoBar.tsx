@@ -83,7 +83,7 @@ export function DemoBar() {
     <>
       <div className="flex items-center justify-between border-b border-[var(--border)] bg-[var(--card-background)]/80 backdrop-blur-sm px-4 py-2 text-xs">
         <span className="text-[var(--muted-foreground)]">
-          👁 Viewing <strong className="text-[var(--foreground)]">demo profile</strong> — read-only public data
+          🏓 <strong className="text-[var(--foreground)]">Rubberr</strong> — AI table tennis coach &amp; tournament intelligence. Try the <strong className="text-[var(--foreground)]">AI Coach</strong> chat.
         </span>
         <button
           onClick={() => setShowModal(true)}

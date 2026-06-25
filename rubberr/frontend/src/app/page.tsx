@@ -10,6 +10,14 @@ import { AlertCircle, LocateFixed } from "lucide-react";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
+// ponytail: demo fallback data so visitors see a populated dashboard even without a backend
+const DEMO_USER = { full_name: "Demo Player", rating: 1847, usatt_number: "227591" };
+const DEMO_TOURNAMENTS = [
+  { title: "Austin Open - USATT Sanctioned", location: "Austin, TX", date_range: "Jul 12-13, 2026", status: "Open", estimated_cost: "$45", tier: "Regional", events: ["U2000", "Open Singles", "Doubles"] },
+  { title: "Texas State Championships", location: "Houston, TX", date_range: "Aug 2-3, 2026", status: "Registration Open", estimated_cost: "$65", tier: "State", events: ["Open", "U2200", "U1800", "Teams"] },
+  { title: "Southwest Regional Classic", location: "Dallas, TX", date_range: "Sep 6-7, 2026", status: "Coming Soon", estimated_cost: "$55", tier: "Regional", events: ["Open Singles", "U2000", "Hardbat"] },
+];
+
 import { useArcade } from "@/context/ArcadeContext";
 import ArcadeScoreInput from "@/components/ArcadeScoreInput";
 import ArcadeMatchList from "@/components/ArcadeMatchList";
@@ -176,7 +184,7 @@ export default function Home() {
     return false; // No change
   };
 
-  // 1. Fetch User (with cache)
+  // 1. Fetch User (with cache, demo fallback)
   const fetchUser = async () => {
     try {
       const res = await fetch(`${API_URL}/user`);
@@ -186,26 +194,30 @@ export default function Home() {
       setCachedData('user', data);
       return data;
     } catch (e) {
-      console.log("User fetch error:", e);
-      return null;
+      console.log("User fetch error — using demo data");
+      setUser(DEMO_USER);
+      return DEMO_USER;
     }
   };
 
-  // 2. Fetch Tournaments (with cache, Filtered by State if available)
+  // 2. Fetch Tournaments (with cache, demo fallback)
   const fetchTournaments = async (stateFilter?: string) => {
     try {
       let url = `${API_URL}/tournaments`;
       if (stateFilter) url += `?state=${stateFilter}`;
-      
+
       const res = await fetch(url);
       const data = await res.json();
+      if (!data || data.length === 0) throw new Error("empty");
       setAllTournaments(data);
       setTournaments(data.slice(0, 3));
       setCachedData('tournaments', data);
       return data;
     } catch (e) {
-      console.error("Tournament fetch error:", e);
-      return [];
+      console.log("Tournament fetch error — using demo data");
+      setAllTournaments(DEMO_TOURNAMENTS);
+      setTournaments(DEMO_TOURNAMENTS);
+      return DEMO_TOURNAMENTS;
     }
   };
 

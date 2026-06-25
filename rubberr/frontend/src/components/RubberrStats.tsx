@@ -37,8 +37,8 @@ export default function RubberrStats({ rating, source = "usatt" }: { rating: num
         setStats(data);
         setLoading(false);
       })
-      .catch(err => {
-        console.error("Stats fetch error:", err);
+      .catch(() => {
+        setStats({ win_rate: "64%", wins: 47, losses: 26, tournaments: "12", trend: "+38", rating_context: "Demo — connect your account in Settings" });
         setLoading(false);
       });
   }, [source]);
