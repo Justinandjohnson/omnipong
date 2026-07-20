@@ -63,3 +63,6 @@ rubberr/backend/debug/
 .DS_Store
 Thumbs.db
 .vercel
+
+# scraped debug dump (contains third-party PII)
+regional_dump.html
