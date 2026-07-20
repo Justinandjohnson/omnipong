@@ -1,0 +1,323 @@
+{
+  "tournaments": [
+    {
+      "title": "2025 PAUL SCOBEY Memorial Open (Rescheduled)",
+      "date_range": "12/27/25",
+      "location": "Shorewood",
+      "status": "upcoming",
+      "url": "https://www.omnipong.com/t-tourney.asp?e=0"
+    },
+    {
+      "title": "Moneyball Tournament Cash Prize",
+      "date_range": "12/20/25",
+      "location": "Naples",
+      "status": "upcoming",
+      "url": "https://www.omnipong.com/t-tourney.asp?e=0"
+    },
+    {
+      "title": "Mastiff TTC 2025 December Open",
+      "date_range": "12/20/25",
+      "location": "Dedham",
+      "status": "upcoming",
+      "url": "https://www.omnipong.com/t-tourney.asp?e=0"
+    },
+    {
+      "title": "Spindex Challenge Night at Naples Pong",
+      "date_range": "12/18/25",
+      "location": "Naples",
+      "status": "upcoming",
+      "url": "https://www.omnipong.com/t-tourney.asp?e=0"
+    },
+    {
+      "title": "Butterfly RITTA Winter Open '25",
+      "date_range": "12/14/25",
+      "location": "Lincoln",
+      "status": "upcoming",
+      "url": "https://www.omnipong.com/t-tourney.asp?e=0"
+    },
+    {
+      "title": "Top Spin USA Grand Opening Tournament",
+      "date_range": "12/14/25",
+      "location": "Plano",
+      "status": "upcoming",
+      "url": "https://www.omnipong.com/t-tourney.asp?e=0"
+    },
+    {
+      "title": "Paddle Palace Club 2025 Holiday Season Open",
+      "date_range": "12/13/25 - 12/14/25",
+      "location": "Tigard",
+      "status": "upcoming",
+      "url": "https://www.omnipong.com/t-tourney.asp?e=0"
+    },
+    {
+      "title": "LATTA Butterfly December Open 2025",
+      "date_range": "12/13/25",
+      "location": "El Monte",
+      "status": "upcoming",
+      "url": "https://www.omnipong.com/t-tourney.asp?e=0"
+    },
+    {
+      "title": "GLTTC U1500 Giant Round Robin - $400 in Cash Prizes!",
+      "date_range": "12/13/25",
+      "location": "South El Monte",
+      "status": "upcoming",
+      "url": "https://www.omnipong.com/t-tourney.asp?e=0"
+    },
+    {
+      "title": "KCTT 2025 Winter Tournament",
+      "date_range": "12/13/25",
+      "location": "LEAWOOD",
+      "status": "upcoming",
+      "url": "https://www.omnipong.com/t-tourney.asp?e=0"
+    },
+    {
+      "title": "2025 CFTTC Holiday U2200 Adult Only Round Robin",
+      "date_range": "12/13/25",
+      "location": "Fayetteville",
+      "status": "upcoming",
+      "url": "https://www.omnipong.com/t-tourney.asp?e=0"
+    },
+    {
+      "title": "2025 17th COLUMBUS TABLE TENNIS TEAM INVITATIONAL",
+      "date_range": "12/13/25",
+      "location": "Columbus",
+      "status": "upcoming",
+      "url": "https://www.omnipong.com/t-tourney.asp?e=0"
+    },
+    {
+      "title": "SATTC BUTTERFLY ANNUAL CHRISTMAS TOP EVENT",
+      "date_range": "12/13/25",
+      "location": "San Antonio",
+      "status": "upcoming",
+      "url": "https://www.omnipong.com/t-tourney.asp?e=0"
+    },
+    {
+      "title": "USATT FLORIDA STATE OPEN & Carmel Barrau International OPEN. $11,200 in Prizes",
+      "date_range": "12/12/25 - 12/14/25",
+      "location": "Davie",
+      "status": "upcoming",
+      "url": "https://www.omnipong.com/t-tourney.asp?e=0"
+    },
+    {
+      "title": "2025 USATT IL STATE CHAMPIONSHIP",
+      "date_range": "12/12/25 - 12/14/25",
+      "location": "Rolling Meadows",
+      "status": "upcoming",
+      "url": "https://www.omnipong.com/t-tourney.asp?e=0"
+    },
+    {
+      "title": "2025 Valley of the Sun Open",
+      "date_range": "12/06/25 - 12/08/25",
+      "location": "Phoenix",
+      "status": "upcoming",
+      "url": "https://www.omnipong.com/t-tourney.asp?e=0"
+    },
+    {
+      "title": "ICC JOOLA WINTER OPEN (2025)",
+      "date_range": "12/06/25 - 12/07/25",
+      "location": "Milpitas",
+      "status": "upcoming",
+      "url": "https://www.omnipong.com/t-tourney.asp?e=0"
+    },
+    {
+      "title": "OCTTA Butterfly Winter Open 2025",
+      "date_range": "12/06/25 - 12/07/25",
+      "location": "Fountain Valley",
+      "status": "upcoming",
+      "url": "https://www.omnipong.com/t-tourney.asp?e=0"
+    },
+    {
+      "title": "HCTT Circuit - 202512",
+      "date_range": "12/06/25 - 12/07/25",
+      "location": "Jessup",
+      "status": "upcoming",
+      "url": "https://www.omnipong.com/t-tourney.asp?e=0"
+    },
+    {
+      "title": "HTTC Winter Giant RR",
+      "date_range": "12/06/25 - 12/07/25",
+      "location": "Allen",
+      "status": "upcoming",
+      "url": "https://www.omnipong.com/t-tourney.asp?e=0"
+    },
+    {
+      "title": "Miami Table Tennis Club December 2025 Tournament",
+      "date_range": "12/06/25",
+      "location": "Doral",
+      "status": "upcoming",
+      "url": "https://www.omnipong.com/t-tourney.asp?e=0"
+    },
+    {
+      "title": "MBC Table Tennis Lob Palace December Open",
+      "date_range": "12/06/25",
+      "location": "Millersville",
+      "status": "upcoming",
+      "url": "https://www.omnipong.com/t-tourney.asp?e=0"
+    },
+    {
+      "title": "Carolina Pong Giant RR Presented by AAU - $1300+ in prizes!!",
+      "date_range": "12/06/25",
+      "location": "Columbia",
+      "status": "upcoming",
+      "url": "https://www.omnipong.com/t-tourney.asp?e=0"
+    },
+    {
+      "title": "2025 Butterfly SPTTC DECEMBER GIANT ROUNDROBIN",
+      "date_range": "12/06/25",
+      "location": "Bellevue",
+      "status": "upcoming",
+      "url": "https://www.omnipong.com/t-tourney.asp?e=0"
+    },
+    {
+      "title": "ICC JOOLA WINTER OPEN (2026)",
+      "date_range": "12/05/26 - 12/06/26",
+      "location": "Milpitas",
+      "status": "upcoming",
+      "url": "https://www.omnipong.com/t-tourney.asp?e=0"
+    },
+    {
+      "title": "HCTT Circuit - 202612",
+      "date_range": "12/05/26 - 12/06/26",
+      "location": "Jessup",
+      "status": "upcoming",
+      "url": "https://www.omnipong.com/t-tourney.asp?e=0"
+    },
+    {
+      "title": "LATTA Butterfly December Open 2026",
+      "date_range": "12/05/26",
+      "location": "El Monte",
+      "status": "upcoming",
+      "url": "https://www.omnipong.com/t-tourney.asp?e=0"
+    },
+    {
+      "title": "2025 Butterfly DECEMBER OPEN @ Princeton Pong",
+      "date_range": "12/05/25 - 12/07/25",
+      "location": "Princeton",
+      "status": "upcoming",
+      "url": "https://www.omnipong.com/t-tourney.asp?e=0"
+    },
+    {
+      "title": "2025 Newark Butterfly West Coast Teams",
+      "date_range": "11/29/25",
+      "location": "Newark",
+      "status": "upcoming",
+      "url": "https://www.omnipong.com/t-tourney.asp?e=0"
+    },
+    {
+      "title": "GLTTC U2450 Giant Round Robin - $400 in Cash Prizes!",
+      "date_range": "11/29/25",
+      "location": "South El Monte",
+      "status": "upcoming",
+      "url": "https://www.omnipong.com/t-tourney.asp?e=0"
+    },
+    {
+      "title": "Ping T\u00b2 Thanksgiving Tournament",
+      "date_range": "11/29/25",
+      "location": "Columbia",
+      "status": "upcoming",
+      "url": "https://www.omnipong.com/t-tourney.asp?e=0"
+    },
+    {
+      "title": "Thanksgiving Open - Top Spin USA",
+      "date_range": "11/29/25",
+      "location": "Plano",
+      "status": "upcoming",
+      "url": "https://www.omnipong.com/t-tourney.asp?e=0"
+    },
+    {
+      "title": "OCTTA BUTTERFLY OPEN WINTER 2026",
+      "date_range": "11/28/26 - 11/29/26",
+      "location": "Fountain Valley",
+      "status": "upcoming",
+      "url": "https://www.omnipong.com/t-tourney.asp?e=0"
+    },
+    {
+      "title": "LATTA Black Friday Giant RR",
+      "date_range": "11/28/25",
+      "location": "El Monte",
+      "status": "upcoming",
+      "url": "https://www.omnipong.com/t-tourney.asp?e=0"
+    },
+    {
+      "title": "LATTA Black Friday Giant Round Robin",
+      "date_range": "11/27/26",
+      "location": "El Monte",
+      "status": "upcoming",
+      "url": "https://www.omnipong.com/t-tourney.asp?e=0"
+    },
+    {
+      "title": "LATTA Butterfly November Open 2026",
+      "date_range": "11/21/26",
+      "location": "El Monte",
+      "status": "upcoming",
+      "url": "https://www.omnipong.com/t-tourney.asp?e=0"
+    },
+    {
+      "title": "FMQTTA Winter Open",
+      "date_range": "11/14/26 - 11/15/26",
+      "location": "Fullerton",
+      "status": "upcoming",
+      "url": "https://www.omnipong.com/t-tourney.asp?e=0"
+    },
+    {
+      "title": "HCTT Circuit - 202611",
+      "date_range": "11/07/26 - 11/08/26",
+      "location": "Jessup",
+      "status": "upcoming",
+      "url": "https://www.omnipong.com/t-tourney.asp?e=0"
+    },
+    {
+      "title": "ICC JOOLA AUTUMN OPEN (2026)",
+      "date_range": "10/24/26 - 10/25/26",
+      "location": "Milpitas",
+      "status": "upcoming",
+      "url": "https://www.omnipong.com/t-tourney.asp?e=0"
+    },
+    {
+      "title": "LATTA Butterfly October Open 2025",
+      "date_range": "10/24/26",
+      "location": "El Monte",
+      "status": "upcoming",
+      "url": "https://www.omnipong.com/t-tourney.asp?e=0"
+    }
+  ],
+  "event_menu": [
+    {
+      "name": "Open Singles RR",
+      "rating_limit": 0
+    },
+    {
+      "name": "Under 12 years Juniors RR",
+      "rating_limit": 12
+    },
+    {
+      "name": "Under 17 years Juniors RR",
+      "rating_limit": 17
+    },
+    {
+      "name": "Under 1100 RR",
+      "rating_limit": 1100
+    },
+    {
+      "name": "Under 1400 RR",
+      "rating_limit": 1400
+    },
+    {
+      "name": "Under 1750 RR",
+      "rating_limit": 1750
+    },
+    {
+      "name": "Under 1950 RR",
+      "rating_limit": 1950
+    },
+    {
+      "name": "Under 2150 RR",
+      "rating_limit": 2150
+    },
+    {
+      "name": "Under 2300 RR",
+      "rating_limit": 2300
+    }
+  ],
+  "note": "Sanitized sample from OmniPong. Contact details removed. Rule-based matcher, not an AI agent."
+}

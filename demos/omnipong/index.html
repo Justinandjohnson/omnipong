@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OmniPong Demo — Tournament Scraper + Rule-Based Event Matcher</title>
+<style>
+  :root { color-scheme: light dark; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+         background: #0f1115; color: #e7e9ee; line-height: 1.5; }
+  header { padding: 28px 20px; background: linear-gradient(135deg, #1c2230, #10131a); border-bottom: 1px solid #2a3040; }
+  .wrap { max-width: 900px; margin: 0 auto; padding: 20px; }
+  h1 { margin: 0 0 6px; font-size: 1.6rem; }
+  .tag { display: inline-block; font-size: .72rem; letter-spacing: .04em; text-transform: uppercase;
+         background: #2a3350; color: #9fb4ff; padding: 3px 8px; border-radius: 6px; margin-right: 6px; }
+  .muted { color: #9aa3b2; font-size: .92rem; }
+  .card { background: #161a22; border: 1px solid #262c38; border-radius: 12px; padding: 18px; margin: 16px 0; }
+  h2 { font-size: 1.05rem; margin: 0 0 12px; }
+  label { display: block; font-size: .85rem; margin-bottom: 6px; color: #b9c1d0; }
+  input[type=number] { width: 160px; padding: 9px 11px; border-radius: 8px; border: 1px solid #333b4a;
+         background: #0f131b; color: #e7e9ee; font-size: 1rem; }
+  button { background: #3b5bdb; color: #fff; border: 0; padding: 10px 16px; border-radius: 8px;
+         font-size: .95rem; cursor: pointer; margin-left: 8px; }
+  button:hover { background: #4c6ef5; }
+  .events { margin-top: 14px; display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip { padding: 6px 11px; border-radius: 999px; font-size: .85rem; border: 1px solid #333b4a; background: #10141c; }
+  .chip.pick { background: #12341f; border-color: #1c6b38; color: #7ee2a8; font-weight: 600; }
+  table { width: 100%; border-collapse: collapse; font-size: .9rem; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #232935; }
+  th { color: #8b93a3; font-weight: 600; font-size: .78rem; text-transform: uppercase; letter-spacing: .03em; }
+  tr:hover td { background: #12161f; }
+  .status { font-size: .74rem; padding: 2px 7px; border-radius: 5px; background: #21304a; color: #9fc0ff; }
+  .status.current { background: #123020; color: #7ee2a8; }
+  a { color: #7aa2ff; }
+  footer { text-align: center; padding: 30px 20px; color: #6d7686; font-size: .82rem; }
+  .note { background: #1a2030; border-left: 3px solid #3b5bdb; padding: 10px 14px; border-radius: 6px;
+          font-size: .86rem; color: #b9c1d0; margin: 14px 0; }
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap" style="padding-bottom:0">
+    <h1>OmniPong</h1>
+    <div><span class="tag">Table-tennis</span><span class="tag">Scraper</span><span class="tag">Rule-based matcher</span></div>
+    <p class="muted" style="margin-top:10px">A tournament scraper plus a <strong>rule-based</strong> <code>SmartEventMatcher</code> — regex on rating brackets, not an AI agent. Live scraping (Playwright) runs as an external/local job and is not part of this hosted demo. This page reads a sanitized, PII-free sample dataset.</p>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="card">
+    <h2>Event matcher <span class="muted">— rule-based</span></h2>
+    <p class="muted" style="margin-top:-4px">Enter your rating. The matcher picks Open/Championship plus the two closest rating brackets above you — the exact logic runs client-side, ported 1:1 from the Python <code>SmartEventMatcher</code>.</p>
+    <label for="rating">Your rating</label>
+    <div style="display:flex;align-items:center">
+      <input id="rating" type="number" value="1500" min="0" max="3000" step="10">
+      <button id="run">Match events</button>
+    </div>
+    <div class="events" id="picks"></div>
+  </div>
+
+  <div class="card">
+    <h2>Upcoming tournaments <span class="muted" id="tcount"></span></h2>
+    <div class="note">Contact names, emails, and phone numbers have been stripped from this dataset. Only public listing fields remain.</div>
+    <div style="overflow-x:auto">
+      <table>
+        <thead><tr><th>Tournament</th><th>Dates</th><th>Location</th><th>Status</th></tr></thead>
+        <tbody id="trows"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<footer>OmniPong demo — sanitized sample data, rule-based matcher. Source: github.com/Justinandjohnson/omnipong</footer>
+
+<script>
+// SmartEventMatcher — ported 1:1 from omnipong_scraper.py (rule-based, no AI).
+function matchEvents(availableEvents, rating) {
+  const selected = [];
+  const open = availableEvents.find(e => e.name.includes("Open") || e.name.includes("Championship"));
+  if (open) selected.push(open.name);
+  const ratingEvents = [];
+  for (const e of availableEvents) {
+    const m = e.name.match(/(?:Under|U)\s*-?\s*(\d{3,4})/i);
+    if (m) { const cap = parseInt(m[1], 10); if (cap > rating) ratingEvents.push([cap, e.name]); }
+  }
+  ratingEvents.sort((a, b) => a[0] - b[0]);
+  for (const [, name] of ratingEvents.slice(0, 2)) selected.push(name);
+  const seen = new Set(), out = [];
+  for (const s of selected) if (!seen.has(s)) { seen.add(s); out.push(s); }
+  return out;
+}
+
+let DATA = { tournaments: [], event_menu: [] };
+
+function renderPicks() {
+  const rating = parseInt(document.getElementById("rating").value, 10) || 0;
+  const picks = new Set(matchEvents(DATA.event_menu, rating));
+  const box = document.getElementById("picks");
+  box.innerHTML = "";
+  for (const e of DATA.event_menu) {
+    const div = document.createElement("div");
+    div.className = "chip" + (picks.has(e.name) ? " pick" : "");
+    div.textContent = e.name + (picks.has(e.name) ? "  ✓" : "");
+    box.appendChild(div);
+  }
+  if (DATA.event_menu.length === 0) box.textContent = "No event menu in sample data.";
+}
+
+function renderTournaments() {
+  const tb = document.getElementById("trows");
+  tb.innerHTML = "";
+  for (const t of DATA.tournaments) {
+    const tr = document.createElement("tr");
+    const st = (t.status || "").toLowerCase();
+    tr.innerHTML =
+      `<td><a href="${t.url}" target="_blank" rel="noopener noreferrer">${t.title}</a></td>` +
+      `<td>${t.date_range || "—"}</td>` +
+      `<td>${t.location || "—"}</td>` +
+      `<td><span class="status ${st}">${t.status || ""}</span></td>`;
+    tb.appendChild(tr);
+  }
+  document.getElementById("tcount").textContent = "(" + DATA.tournaments.length + ")";
+}
+
+fetch("./data.json").then(r => r.json()).then(d => {
+  DATA = d;
+  renderPicks();
+  renderTournaments();
+});
+document.getElementById("run").addEventListener("click", renderPicks);
+</script>
+</body>
+</html>

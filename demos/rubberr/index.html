@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rubberr Demo — Table Tennis Coaching Assistant</title>
+<style>
+  :root { color-scheme: light dark; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+         background: #0f1115; color: #e7e9ee; line-height: 1.5; }
+  header { padding: 28px 20px; background: linear-gradient(135deg, #26183a, #12101a); border-bottom: 1px solid #33294a; }
+  .wrap { max-width: 860px; margin: 0 auto; padding: 20px; }
+  h1 { margin: 0 0 6px; font-size: 1.6rem; }
+  .tag { display: inline-block; font-size: .72rem; letter-spacing: .04em; text-transform: uppercase;
+         background: #3a2a55; color: #cdb4ff; padding: 3px 8px; border-radius: 6px; margin-right: 6px; }
+  .muted { color: #9aa3b2; font-size: .92rem; }
+  .card { background: #161a22; border: 1px solid #262c38; border-radius: 12px; padding: 18px; margin: 16px 0; }
+  h2 { font-size: 1.05rem; margin: 0 0 12px; }
+  .stats { display: flex; gap: 14px; flex-wrap: wrap; }
+  .stat { flex: 1; min-width: 110px; background: #10141c; border: 1px solid #262c38; border-radius: 10px; padding: 14px; text-align: center; }
+  .stat .n { font-size: 1.8rem; font-weight: 700; }
+  .stat.win .n { color: #7ee2a8; } .stat.loss .n { color: #ff9b9b; }
+  .stat .l { font-size: .75rem; text-transform: uppercase; letter-spacing: .04em; color: #8b93a3; }
+  table { width: 100%; border-collapse: collapse; font-size: .9rem; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #232935; }
+  th { color: #8b93a3; font-weight: 600; font-size: .78rem; text-transform: uppercase; }
+  .res { font-weight: 700; } .res.Win { color: #7ee2a8; } .res.Loss { color: #ff9b9b; }
+  input[type=text], input[type=password], textarea { width: 100%; padding: 10px 12px; border-radius: 8px;
+         border: 1px solid #333b4a; background: #0f131b; color: #e7e9ee; font-size: .95rem; }
+  textarea { resize: vertical; min-height: 60px; }
+  button { background: #7048e8; color: #fff; border: 0; padding: 10px 16px; border-radius: 8px; font-size: .95rem; cursor: pointer; }
+  button:hover { background: #845ef7; } button:disabled { opacity: .5; cursor: default; }
+  .row { display: flex; gap: 10px; align-items: flex-start; margin-top: 10px; }
+  .chatlog { margin-top: 14px; display: flex; flex-direction: column; gap: 10px; }
+  .bubble { padding: 10px 14px; border-radius: 12px; max-width: 85%; white-space: pre-wrap; font-size: .92rem; }
+  .bubble.you { align-self: flex-end; background: #2a2350; }
+  .bubble.coach { align-self: flex-start; background: #182231; }
+  .bubble.err { align-self: flex-start; background: #3a1c1c; color: #ffb3b3; }
+  .keybox { font-size: .82rem; }
+  footer { text-align: center; padding: 30px 20px; color: #6d7686; font-size: .82rem; }
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap" style="padding-bottom:0">
+    <h1>Rubberr</h1>
+    <div><span class="tag">Table tennis</span><span class="tag">Coaching chat</span><span class="tag">BYOK</span></div>
+    <p class="muted" style="margin-top:10px">A table-tennis tracking + coaching assistant. This demo shows a sample player's stats and a live coaching chat. Chat is <strong>bring-your-own-key</strong> — paste an Anthropic API key; it is sent per-request to a Cloudflare Worker and never stored.</p>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="card">
+    <h2 id="playerName">Player</h2>
+    <div class="stats" id="stats"></div>
+  </div>
+
+  <div class="card">
+    <h2>Recent matches</h2>
+    <div style="overflow-x:auto">
+      <table>
+        <thead><tr><th>Date</th><th>Opponent</th><th>Result</th><th>Score</th><th>Sets</th></tr></thead>
+        <tbody id="matchRows"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Coach Rubberr <span class="muted">— live BYOK chat</span></h2>
+    <label class="keybox muted" for="key">Anthropic API key (kept in this browser tab only)</label>
+    <input id="key" type="password" placeholder="sk-ant-..." autocomplete="off">
+    <div class="row">
+      <textarea id="msg" placeholder="Ask for coaching, e.g. 'How do I beat a chopper?'"></textarea>
+      <button id="send">Send</button>
+    </div>
+    <div class="chatlog" id="chatlog"></div>
+  </div>
+</div>
+
+<footer>Rubberr demo — sample stats are baked static data; chat is live BYOK. Source: github.com/Justinandjohnson/omnipong</footer>
+
+<script>
+const CHAT_WORKER = "https://rubberr-chat.justinandjohnson.workers.dev";
+
+fetch("./data.json").then(r => r.json()).then(d => {
+  const p = d.player || {};
+  document.getElementById("playerName").textContent =
+    (p.full_name || "Player") + (p.rating ? " — rating " + p.rating : "");
+  const s = d.stats || {};
+  document.getElementById("stats").innerHTML =
+    `<div class="stat"><div class="n">${s.total_matches ?? 0}</div><div class="l">Matches</div></div>` +
+    `<div class="stat win"><div class="n">${s.wins ?? 0}</div><div class="l">Wins</div></div>` +
+    `<div class="stat loss"><div class="n">${s.losses ?? 0}</div><div class="l">Losses</div></div>`;
+  const tb = document.getElementById("matchRows");
+  for (const m of (d.recent_matches || [])) {
+    const date = (m.match_date || "").split(" ")[0];
+    const tr = document.createElement("tr");
+    tr.innerHTML =
+      `<td>${date}</td><td>${m.opponent_name || ""}</td>` +
+      `<td class="res ${m.result}">${m.result || ""}</td>` +
+      `<td>${m.score_summary || ""}</td><td>${m.set_scores || ""}</td>`;
+    tb.appendChild(tr);
+  }
+});
+
+const log = document.getElementById("chatlog");
+function bubble(cls, text) {
+  const d = document.createElement("div");
+  d.className = "bubble " + cls;
+  d.textContent = text;
+  log.appendChild(d);
+  d.scrollIntoView({ behavior: "smooth", block: "end" });
+}
+
+const sendBtn = document.getElementById("send");
+sendBtn.addEventListener("click", async () => {
+  const key = document.getElementById("key").value.trim();
+  const msg = document.getElementById("msg").value.trim();
+  if (!msg) return;
+  if (!key) { bubble("err", "Paste your Anthropic API key first."); return; }
+  bubble("you", msg);
+  document.getElementById("msg").value = "";
+  sendBtn.disabled = true;
+  try {
+    const res = await fetch(CHAT_WORKER, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: msg, apiKey: key }),
+    });
+    const data = await res.json();
+    if (!res.ok) bubble("err", data.error || ("Error " + res.status));
+    else bubble("coach", data.reply || "(no reply)");
+  } catch (e) {
+    bubble("err", "Network error: " + e.message);
+  } finally {
+    sendBtn.disabled = false;
+  }
+});
+</script>
+</body>
+</html>

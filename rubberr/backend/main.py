@@ -16,6 +16,10 @@ from dotenv import load_dotenv
 # Load .env variables
 load_dotenv(os.path.join(os.path.dirname(__file__), "../../.env"))
 
+# Configurable player identity so anyone can run this — defaults are generic.
+PLAYER_NAME = os.getenv("PLAYER_NAME", "the player")
+PLAYER_FULL_NAME = os.getenv("PLAYER_FULL_NAME", PLAYER_NAME)
+
 # Add project root to path so we can import browser_manager
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 from browser_manager import BrowserManager
@@ -174,17 +178,17 @@ def get_demo_profile():
             text("""
                 SELECT
                     COUNT(*) as total_matches,
-                    SUM(CASE WHEN result = 'win' THEN 1 ELSE 0 END) as wins,
-                    SUM(CASE WHEN result = 'loss' THEN 1 ELSE 0 END) as losses
+                    SUM(CASE WHEN result = 'Win' THEN 1 ELSE 0 END) as wins,
+                    SUM(CASE WHEN result = 'Loss' THEN 1 ELSE 0 END) as losses
                 FROM matches
             """)
         ).fetchone()
 
         recent = session.execute(
             text("""
-                SELECT opponent_name, result, match_date, player_score, opponent_score
+                SELECT opponent_name, result, date as match_date, score_summary, set_scores
                 FROM matches
-                ORDER BY match_date DESC
+                ORDER BY date DESC
                 LIMIT 10
             """)
         ).fetchall()
@@ -205,7 +209,7 @@ def get_demo_profile():
 def get_user():
     session = SessionLocal()
     try:
-        # Fetch the main user (Justin)
+        # Fetch the main user (the configured player)
         result = session.execute(
             text(
                 "SELECT name as full_name, current_rating as rating, usatt_id as usatt_number, phone_number FROM users LIMIT 1"
@@ -1554,8 +1558,8 @@ def get_tool_tournament_intelligence(tournament_title: str = None, limit: int = 
 # ============================================
 
 # System Prompt to define the AI's persona and context
-SYSTEM_PROMPT = """You are 'Coach Rubberr', a world-class AI table tennis coach and analyst. 
-You help user 'Justin' manage his table tennis career by analyzing match data, tracking progress, and finding tournaments.
+SYSTEM_PROMPT = f"""You are 'Coach Rubberr', a world-class AI table tennis coach and analyst.
+You help user '{PLAYER_NAME}' manage their table tennis career by analyzing match data, tracking progress, and finding tournaments.
 
 CONCISENESS IS CRITICAL:
 - Be extremely concise and direct. 
@@ -1567,7 +1571,7 @@ CONCISENESS IS CRITICAL:
 Persona:
 - Professional, encouraging, and human-like.
 - Provide psychological insights only when relevant to a specific match or trend being discussed.
-- You are Justin's personal coach. Be helpful but don't over-explain.
+- You are {PLAYER_NAME}'s personal coach. Be helpful but don't over-explain.
 
 DATA STRATEGY:
 1. ALWAYS start with `get_context` to see the current state.
@@ -1578,15 +1582,10 @@ DATA STRATEGY:
 
 
 def get_anthropic_client():
-    try:
-        key_path = os.path.expanduser("~/.anthropic/api_key")
-        if os.path.exists(key_path):
-            with open(key_path, "r") as f:
-                api_key = f.read().strip()
-                return anthropic.Anthropic(api_key=api_key)
-    except:
-        pass
-    return None
+    api_key = os.getenv("ANTHROPIC_API_KEY")
+    if not api_key:
+        raise ValueError("ANTHROPIC_API_KEY not found in environment")
+    return anthropic.Anthropic(api_key=api_key)
 
 
 # Tool definitions for Claude
@@ -1598,7 +1597,7 @@ CLAUDE_TOOLS = [
     },
     {
         "name": "get_stats",
-        "description": "Get Justin's current stats (win rate, trend, patterns) for USATT or Club League.",
+        "description": "Get the player's current stats (win rate, trend, patterns) for USATT or Club League.",
         "input_schema": {
             "type": "object",
             "properties": {
@@ -1612,7 +1611,7 @@ CLAUDE_TOOLS = [
     },
     {
         "name": "query_matches",
-        "description": "Search Justin's match history with filters.",
+        "description": "Search the player's match history with filters.",
         "input_schema": {
             "type": "object",
             "properties": {
@@ -1705,12 +1704,6 @@ async def get_claude_response(user_message: str, user_key: str = None):
         client = anthropic.Anthropic(api_key=user_key)
     else:
         client = get_anthropic_client()
-        if not client:
-            api_key = os.getenv("ANTHROPIC_API_KEY")
-            if api_key:
-                client = anthropic.Anthropic(api_key=api_key)
-            else:
-                return "Error: Anthropic API key not found. Please set ANTHROPIC_API_KEY."
 
     # Use the model that we verified works (reverting to original)
     model = "claude-sonnet-4-5"
@@ -1908,7 +1901,7 @@ def update_phone(data: PhoneUpdate):
             )
         else:
             # Create dummy user if needed? Should exist.
-            # Assuming 'Justin' exists from migration.
+            # Assuming the primary user exists from migration.
             pass
 
         session.commit()
@@ -1969,7 +1962,7 @@ async def get_player_scouting(player_name: str, _: None = Depends(_require_api_k
         wins = sum(
             1
             for m in matches
-            if m["winner_name"] == "Justin Johnson"
+            if m["winner_name"] == PLAYER_FULL_NAME
             or m["result"] == "Win"
             or m["result"] == "W"
         )
@@ -1984,14 +1977,14 @@ async def get_player_scouting(player_name: str, _: None = Depends(_require_api_k
         )
 
         prompt = f"""
-        You are a Table Tennis Scout. Analyze the following match history for 'Justin Johnson' against '{player_name}'.
-        
+        You are a Table Tennis Scout. Analyze the following match history for '{PLAYER_FULL_NAME}' against '{player_name}'.
+
         MATCH HISTORY:
         {match_summary}
-        
+
         TASK:
         1. Identify the opponent's likely style based on the results and scores (e.g., blocker, attacker, chopper).
-        2. Highlight Justin's vulnerabilities in these matches (e.g., "loses long rallies", "struggles in deciding sets").
+        2. Highlight the player's vulnerabilities in these matches (e.g., "loses long rallies", "struggles in deciding sets").
         3. Provide 3 specific tactical "Keys to Victory" for the next match.
         4. Keep it concise, strategic, and professional.
         """
@@ -2078,7 +2071,7 @@ async def get_training_recommendations():
         # 2. Construct prompt for training advice
         prompt = f"""
         You are Coach Rubberr, a world-class table tennis coach.
-        Analyze Justin's recent performance patterns across {total} matches and suggest a training plan.
+        Analyze the player's recent performance patterns across {total} matches and suggest a training plan.
         
         PATTERNS:
         - Comebacks (Won after losing Set 1): {comebacks}
