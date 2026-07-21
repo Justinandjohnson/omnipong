@@ -1,0 +1,44 @@
+# guardrails CI (GitHub Actions) — safe on existing repos.
+# Secret-scans full history, and lints ONLY changed Python files (mirrors the
+# local pre-commit hook) so legacy code doesn't turn the build red.
+# Add your real test job when ready — see the commented block at the bottom.
+name: guardrails
+on:
+  push:
+  pull_request:
+
+jobs:
+  secret-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITLEAKS_LICENSE: ""
+
+  lint-changed:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Ruff on changed .py files only
+        run: |
+          pip install ruff
+          BASE="${{ github.event.pull_request.base.sha }}"
+          [ -z "$BASE" ] && BASE="${{ github.event.before }}"
+          case "$BASE" in ""|0000000000000000000000000000000000000000) echo "no base to diff — skipping"; exit 0;; esac
+          FILES=$(git diff --name-only --diff-filter=ACM "$BASE" HEAD -- '*.py' || true)
+          if [ -n "$FILES" ]; then echo "$FILES"; echo "$FILES" | xargs ruff check; else echo "no changed .py files"; fi
+
+  # Tests: add your repo's real command, e.g.
+  # test:
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - run: <your build/test command>
