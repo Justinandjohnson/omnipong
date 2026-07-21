@@ -1,59 +1,23 @@
 "use client";
 import Sidebar from "@/components/Sidebar";
+import StadiumSyncPanel from "@/components/StadiumSyncPanel";
 import { useEffect, useState } from "react";
-import { RefreshCw, User, Shield, Save, Trash2, Eye, EyeOff } from "lucide-react";
+import { User, Shield, Download, Terminal } from "lucide-react";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
-interface ServiceCreds {
-  configured: boolean;
-  username: string;
+interface RubberrUser {
+  full_name?: string;
+  usatt_number?: string;
+  rating?: number;
 }
 
 export default function SettingsPage() {
-  const [user, setUser] = useState<any>(null);
-  const [creds, setCreds] = useState<Record<string, ServiceCreds>>({});
-  const [omnipongUser, setOmnipongUser] = useState("");
-  const [omnipongPass, setOmnipongPass] = useState("");
-  const [stadiumUser, setStadiumUser] = useState("");
-  const [stadiumPass, setStadiumPass] = useState("");
-  const [saving, setSaving] = useState<string | null>(null);
-  const [showPass, setShowPass] = useState<Record<string, boolean>>({});
+  const [user, setUser] = useState<RubberrUser | null>(null);
 
   useEffect(() => {
     fetch(`${API_URL}/user`).then(r => r.json()).then(setUser).catch(() => {});
-    fetch(`${API_URL}/credentials`).then(r => r.json()).then((data) => {
-      setCreds(data);
-      if (data.omnipong?.username) setOmnipongUser(data.omnipong.username);
-      if (data.stadium?.username) setStadiumUser(data.stadium.username);
-    }).catch(() => {});
   }, []);
-
-  async function saveCreds(service: string) {
-    const username = service === "omnipong" ? omnipongUser : stadiumUser;
-    const password = service === "omnipong" ? omnipongPass : stadiumPass;
-    if (!username || !password) return;
-    setSaving(service);
-    try {
-      await fetch(`${API_URL}/credentials`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ service, username, password }),
-      });
-      setCreds(prev => ({ ...prev, [service]: { configured: true, username } }));
-      if (service === "omnipong") setOmnipongPass("");
-      else setStadiumPass("");
-    } finally {
-      setSaving(null);
-    }
-  }
-
-  async function removeCreds(service: string) {
-    await fetch(`${API_URL}/credentials/${service}`, { method: "DELETE" });
-    setCreds(prev => ({ ...prev, [service]: { configured: false, username: "" } }));
-    if (service === "omnipong") { setOmnipongUser(""); setOmnipongPass(""); }
-    else { setStadiumUser(""); setStadiumPass(""); }
-  }
 
   return (
     <div className="bg-[var(--background)] min-h-screen text-[var(--foreground)] flex">
@@ -93,115 +57,42 @@ export default function SettingsPage() {
             </div>
           </section>
 
-          {/* Integrations Section */}
+          {/* Private data sync — no stored passwords */}
           <section className="bg-[var(--card)] p-6 rounded-2xl border border-[#333]">
             <div className="flex items-center gap-3 mb-6">
               <Shield className="text-[var(--rubber-red)]" size={24} />
-              <h2 className="text-xl font-bold">Integrations</h2>
+              <h2 className="text-xl font-bold">Private Data Sync</h2>
             </div>
             <p className="text-xs text-gray-500 mb-4">
-              Your credentials are stored locally on this machine only — never sent to any server.
-              The agent uses them to log in and sync your data.
+              We never ask for or store your Stadium/USATT password. You log in yourself,
+              in your own browser &mdash; a small companion app on your machine lets our AI
+              agent drive that already-logged-in tab to read your matches. Anything
+              private stays on <span className="text-gray-300">this device</span>.
             </p>
 
-            <div className="space-y-6">
-              <CredentialCard
-                name="OmniPong"
-                description="USATT ratings and tournament registration"
-                configured={creds.omnipong?.configured}
-                username={omnipongUser}
-                password={omnipongPass}
-                showPassword={showPass.omnipong}
-                saving={saving === "omnipong"}
-                onUsernameChange={setOmnipongUser}
-                onPasswordChange={setOmnipongPass}
-                onTogglePassword={() => setShowPass(p => ({ ...p, omnipong: !p.omnipong }))}
-                onSave={() => saveCreds("omnipong")}
-                onRemove={() => removeCreds("omnipong")}
-                usernamePlaceholder="OmniPong username"
-              />
-              <CredentialCard
-                name="Stadium Compete"
-                description="League tracking and match history"
-                configured={creds.stadium?.configured}
-                username={stadiumUser}
-                password={stadiumPass}
-                showPassword={showPass.stadium}
-                saving={saving === "stadium"}
-                onUsernameChange={setStadiumUser}
-                onPasswordChange={setStadiumPass}
-                onTogglePassword={() => setShowPass(p => ({ ...p, stadium: !p.stadium }))}
-                onSave={() => saveCreds("stadium")}
-                onRemove={() => removeCreds("stadium")}
-                usernamePlaceholder="Email address"
-              />
+            <div className="space-y-4">
+              <div className="p-4 bg-[#111] rounded-xl border border-[#333] space-y-2">
+                <div className="font-bold flex items-center gap-2 text-sm">
+                  <Terminal size={14} className="text-[var(--rubber-red)]" />
+                  1. Run the companion
+                </div>
+                <p className="text-xs text-gray-500">
+                  The companion launches your own Chrome, opens one outbound connection
+                  to our relay, and shows you a &ldquo;Log in / solve, then Continue&rdquo; prompt
+                  whenever a login or verification step needs you. It never sends your
+                  credentials anywhere.
+                </p>
+                <div className="inline-flex items-center gap-2 mt-1 text-xs font-mono text-gray-300 bg-[#0a0a0a] border border-[#333] rounded px-2 py-1.5">
+                  <Download size={13} className="text-[var(--rubber-red)] shrink-0" />
+                  cd companion &amp;&amp; ./run.sh — see companion/README.md
+                </div>
+              </div>
+
+              <StadiumSyncPanel playerName={user?.full_name || ""} />
             </div>
           </section>
         </div>
       </main>
-    </div>
-  );
-}
-
-function CredentialCard({
-  name, description, configured, username, password, showPassword, saving,
-  onUsernameChange, onPasswordChange, onTogglePassword, onSave, onRemove, usernamePlaceholder,
-}: {
-  name: string; description: string; configured?: boolean;
-  username: string; password: string; showPassword?: boolean; saving: boolean;
-  onUsernameChange: (v: string) => void; onPasswordChange: (v: string) => void;
-  onTogglePassword: () => void; onSave: () => void; onRemove: () => void;
-  usernamePlaceholder: string;
-}) {
-  return (
-    <div className="p-4 bg-[#111] rounded-xl border border-[#333] space-y-3">
-      <div className="flex justify-between items-center">
-        <div>
-          <div className="font-bold flex items-center gap-2">
-            {name}
-            <span className={`text-xs px-2 py-0.5 rounded-full border border-white/10 ${
-              configured ? "text-green-500 bg-green-500/10" : "text-gray-500 bg-white/5"
-            }`}>
-              {configured ? "Connected" : "Not configured"}
-            </span>
-          </div>
-          <p className="text-xs text-gray-500 mt-1">{description}</p>
-        </div>
-        {configured && (
-          <button onClick={onRemove} className="p-2 rounded-lg hover:bg-red-500/20 transition-colors" title="Remove credentials">
-            <Trash2 size={14} className="text-red-400" />
-          </button>
-        )}
-      </div>
-      <div className="space-y-2">
-        <input
-          type="text"
-          value={username}
-          onChange={e => onUsernameChange(e.target.value)}
-          placeholder={usernamePlaceholder}
-          className="w-full p-2.5 bg-[#0a0a0a] rounded-lg border border-[#333] text-sm text-gray-200 placeholder:text-gray-600 focus:border-[var(--rubber-red)] focus:outline-none transition-colors"
-        />
-        <div className="relative">
-          <input
-            type={showPassword ? "text" : "password"}
-            value={password}
-            onChange={e => onPasswordChange(e.target.value)}
-            placeholder={configured ? "••••••••  (saved)" : "Password"}
-            className="w-full p-2.5 pr-10 bg-[#0a0a0a] rounded-lg border border-[#333] text-sm text-gray-200 placeholder:text-gray-600 focus:border-[var(--rubber-red)] focus:outline-none transition-colors"
-          />
-          <button onClick={onTogglePassword} className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-gray-500 hover:text-gray-300">
-            {showPassword ? <EyeOff size={14} /> : <Eye size={14} />}
-          </button>
-        </div>
-        <button
-          onClick={onSave}
-          disabled={!username || !password || saving}
-          className="w-full flex items-center justify-center gap-2 p-2.5 rounded-lg bg-[var(--rubber-red)] text-white text-sm font-bold disabled:opacity-30 disabled:cursor-not-allowed hover:brightness-110 transition-all"
-        >
-          {saving ? <RefreshCw size={14} className="animate-spin" /> : <Save size={14} />}
-          {saving ? "Saving..." : configured ? "Update" : "Save & Connect"}
-        </button>
-      </div>
     </div>
   );
 }

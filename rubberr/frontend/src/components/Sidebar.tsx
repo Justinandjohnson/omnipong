@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Home, BarChart2, Settings, Trophy, Map as MapIcon, MessageCircle, Gamepad2, Menu, X } from 'lucide-react';
+import { Home, BarChart2, Settings, Trophy, Map as MapIcon, MessageCircle, Gamepad2, Menu, X, Search } from 'lucide-react';
 import { useArcade } from "@/context/ArcadeContext";
 
 function NavItem({ icon, label, href, active }: { icon: React.ReactNode, label: string, href: string, active?: boolean }) {
@@ -88,6 +88,7 @@ export default function Sidebar() {
 
         <nav className="flex-1 px-4 space-y-2">
           <NavItem icon={<Home size={20} />} label="Dashboard" href="/" active={pathname === '/'} />
+          <NavItem icon={<Search size={20} />} label="Find Yourself" href="/lookup" active={pathname === '/lookup'} />
           <NavItem icon={<MapIcon size={20} />} label="Map" href="/map" active={pathname === '/map'} />
           <NavItem icon={<Trophy size={20} />} label="Tournaments" href="/tournaments" active={pathname === '/tournaments'} />
           <NavItem icon={<BarChart2 size={20} />} label="Analytics" href="/analytics" active={pathname === '/analytics'} />

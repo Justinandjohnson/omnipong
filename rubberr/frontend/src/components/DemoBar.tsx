@@ -16,7 +16,14 @@ export function setStoredKey(key: string | null) {
 
 export function getAIHeaders(): Record<string, string> {
   const key = getStoredKey();
-  return key ? { "X-User-Api-Key": key } : {};
+  const headers: Record<string, string> = key ? { "X-User-Api-Key": key } : {};
+  // S1: owner-only gate on the Tier-3 sync + Tier-1 lookup endpoints
+  // (rubberr/backend/main.py's _require_operator_token). Build-time constant
+  // is fine for this owner-only, self-hosted deployment — see
+  // docs/PLATFORM_RUNBOOK.md and .env.example's NEXT_PUBLIC_OPERATOR_TOKEN.
+  const operatorToken = process.env.NEXT_PUBLIC_OPERATOR_TOKEN;
+  if (operatorToken) headers["X-Operator-Token"] = operatorToken;
+  return headers;
 }
 
 function KeyModal({ onClose }: { onClose: () => void }) {

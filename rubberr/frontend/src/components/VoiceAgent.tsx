@@ -3,6 +3,7 @@ import { useConversation } from '@elevenlabs/react';
 import { motion } from 'framer-motion';
 import { useCallback, useState, useEffect, useRef } from 'react';
 import { Mic, X, Radio } from 'lucide-react';
+import { getAIHeaders } from './DemoBar';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -48,7 +49,12 @@ const clientTools = {
     // === SYNC CONTROL ===
     syncOmnipong: async () => {
         try {
-            const res = await fetch(`${API_URL}/tools/sync/omnipong`, { method: 'POST' });
+            // S1: /tools/sync/omnipong (Tier-3) is owner-gated — same headers
+            // (X-Operator-Token, X-User-Api-Key) StadiumSyncPanel.tsx sends.
+            const res = await fetch(`${API_URL}/tools/sync/omnipong`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', ...getAIHeaders() },
+            });
             const data = await res.json();
             return JSON.stringify(data);
         } catch(e) {
@@ -58,7 +64,10 @@ const clientTools = {
 
     syncStadium: async () => {
         try {
-            const res = await fetch(`${API_URL}/tools/sync/stadium`, { method: 'POST' });
+            const res = await fetch(`${API_URL}/tools/sync/stadium`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', ...getAIHeaders() },
+            });
             const data = await res.json();
             return JSON.stringify(data);
         } catch(e) {
