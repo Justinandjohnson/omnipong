@@ -12,23 +12,21 @@ def get_client():
     return OpenAI(api_key=api_key)
 
 import anthropic
+
+# Configurable player identity so anyone can run this — default is generic.
+PLAYER_NAME = os.getenv("PLAYER_NAME", "the player")
+
 def get_anthropic_client():
     api_key = os.getenv("ANTHROPIC_API_KEY")
     if not api_key:
-        # Also check common local path as a courtesy
-        key_path = os.path.expanduser("~/.anthropic/api_key")
-        if os.path.exists(key_path):
-            with open(key_path, "r") as f:
-                api_key = f.read().strip()
-    if not api_key:
-         raise ValueError("ANTHROPIC_API_KEY not found in environment or ~/.anthropic/api_key")
+        raise ValueError("ANTHROPIC_API_KEY not found in environment")
     return anthropic.Anthropic(api_key=api_key)
 
 class MatchIntent(BaseModel):
     message_type: str = Field(..., description="Type of message: 'match_report' if user is reporting a score, 'query' if asking a question/other.")
-    player1_name: Optional[str] = Field(None, description="Name of player 1 (usually the user, Justin)")
+    player1_name: Optional[str] = Field(None, description="Name of player 1 (usually the user/player)")
     player2_name: Optional[str] = Field(None, description="Name of player 2 (opponent)")
-    player1_score: Optional[int] = Field(None, description="Score of player 1 (Justin)")
+    player1_score: Optional[int] = Field(None, description="Score of player 1 (the user/player)")
     player2_score: Optional[int] = Field(None, description="Score of player 2 (opponent)")
     set_scores: Optional[str] = Field(None, description="Detailed set scores, e.g., '11-9, 5-11'")
     match_date: Optional[str] = Field(None, description="Date of match if mentioned, else None")
@@ -122,6 +120,9 @@ EXAMPLES:
 - "11-7" → {"message_type": "match_report", "player1_name": "Justin", "player1_score": 11, "player2_score": 7, ...}
 - "Justin beat Alex 3-1" → {"message_type": "match_report", "player1_name": "Justin", "player2_name": "Alex", "player1_score": 3, "player2_score": 1, ...}
 - "I won 11-9" → {"message_type": "match_report", "player1_name": "Justin", "player1_score": 11, "player2_score": 9, ...}"""
+
+        # Use the configured player name instead of the hardcoded default.
+        system_prompt = system_prompt.replace("Justin", PLAYER_NAME)
 
         response = client.messages.create(
             model="claude-sonnet-4-5",

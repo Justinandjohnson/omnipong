@@ -1,5 +1,6 @@
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse, StreamingResponse
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 from datetime import datetime
@@ -9,12 +10,17 @@ import os
 import sys
 
 import anthropic
+import httpx
 import json
 from pydantic import BaseModel
 from dotenv import load_dotenv
 
 # Load .env variables
 load_dotenv(os.path.join(os.path.dirname(__file__), "../../.env"))
+
+# Configurable player identity so anyone can run this — defaults are generic.
+PLAYER_NAME = os.getenv("PLAYER_NAME", "the player")
+PLAYER_FULL_NAME = os.getenv("PLAYER_FULL_NAME", PLAYER_NAME)
 
 # Add project root to path so we can import browser_manager
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
@@ -38,32 +44,317 @@ class ProcessText(BaseModel):
     text: str
 
 
-class CredentialUpdate(BaseModel):
-    service: str  # "omnipong" or "stadium"
-    username: str
-    password: str
+class StadiumSyncStartRequest(BaseModel):
+    """Request body for the Tier-3 sync-start endpoints (/tools/sync/stadium,
+    /tools/sync/omnipong). Matches the frontend contract documented in
+    StadiumSyncPanel.tsx: { player_name }. There is no session_token here —
+    F provisions the relay session itself (see _provision_relay_session);
+    the frontend/companion never hands F a raw CDP session token directly."""
+
+    player_name: str | None = None
+    model: str | None = None
 
 
-# ponytail: local credentials file — never committed, per-machine only
-CREDS_FILE = os.path.join(os.path.dirname(__file__), "../../.credentials.json")
+# --- Tier-3/Tier-1 browser-agent bridge ---
+# Frozen interface: docs/RELAY_ARCHITECTURE.md §8 (B<->F). F calls
+# run_browser_task(...); F does not build cdp_url or talk CDP directly — that's
+# Agent B's module. Import is guarded because browser_agent.py may not exist yet
+# while B is still building it; callers get a clean 503, not a silent fallback.
+try:
+    from .browser_agent import run_browser_task, validate_player_name, validate_task_text
 
-def load_local_creds():
+    BROWSER_AGENT_AVAILABLE = True
+    _browser_agent_import_error = None
+except ImportError as e:
+    BROWSER_AGENT_AVAILABLE = False
+    _browser_agent_import_error = str(e)
+    run_browser_task = None
+    validate_player_name = None
+    validate_task_text = None
+
+
+def _get_user_openrouter_key(request: Request) -> str | None:
+    """BYOK OpenRouter key for browser-agent calls.
+
+    OQ-4 (RELAY_ARCHITECTURE.md §6 / BROWSER_USE_SPIKE.md): reuses the same
+    `X-User-Api-Key` header the frontend already sends for the Anthropic key
+    (DemoBar.tsx's single BYOK field accepts either an Anthropic `sk-ant-...`
+    or OpenRouter `sk-or-...` key today, and StadiumSyncPanel.tsx already
+    forwards it via getAIHeaders()). The spike's recommendation to split this
+    into a distinct `X-User-OpenRouter-Key` header was explicitly "not
+    implemented, a recommendation for E/F to adopt" — since E's frontend
+    ships one BYOK field and both E and F already agree on this single
+    header, there is no actual Phase-1 drift here to reconcile, so Phase 2
+    leaves it as-is rather than force a frontend change for no behavior gain.
+    """
+    return request.headers.get("X-User-Api-Key") or None
+
+
+def _browser_task_error(result) -> JSONResponse:
+    """Map a non-ok BrowserTaskResult to the frozen §7 error shape:
+    {"error": {"type": ..., "detail": ...}}. No fallback — if browser_agent's
+    result doesn't carry a compatible `.error` dict, that's a clean 500, not a
+    guessed shape."""
+    error = getattr(result, "error", None)
+    if not isinstance(error, dict) or "type" not in error or "detail" not in error:
+        raise HTTPException(
+            status_code=500,
+            detail="browser_agent returned a non-ok result without a valid {type, detail} error payload",
+        )
+    return JSONResponse(status_code=502, content={"error": error})
+
+
+def _relay_operator_headers() -> dict:
+    """S3: the relay's own control endpoints (/session/start, /session/stop,
+    /session/gate) are gated behind RELAY_OPERATOR_TOKEN (relay/config.py's
+    OPERATOR_TOKEN, checked by relay/server.py's _require_operator_token).
+    This backend is the relay's one legitimate caller, so it must present
+    the same token. If unset here, the relay's own fail-closed check (503)
+    is what surfaces the misconfiguration — this helper does not duplicate
+    that check, it just forwards whatever is configured."""
+    token = os.getenv("RELAY_OPERATOR_TOKEN")
+    return {"X-Operator-Token": token} if token else {}
+
+
+async def _provision_relay_session(register_token: str, *, relay_base_url: str) -> str:
+    """Mint a fresh relay session_token via POST /session/start
+    (RELAY_ARCHITECTURE.md §2.2) for the given register_token.
+
+    Seam: 'who calls relay /session/start' (Phase 2 seam #2) — F does, right
+    before each browser-agent run, using a register_token read from server
+    config (never from the frontend). One relay round trip, no retries: any
+    rejection (bad token, companion not online, one-browser-per-user
+    conflict) surfaces as a single clean HTTPException.
+    """
     try:
-        with open(CREDS_FILE) as f:
-            return json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError):
-        return {}
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.post(
+                f"{relay_base_url.rstrip('/')}/session/start",
+                json={"register_token": register_token},
+                headers=_relay_operator_headers(),
+            )
+    except httpx.HTTPError as exc:
+        raise HTTPException(
+            status_code=502, detail=f"Could not reach the relay to start a session: {exc}"
+        ) from exc
 
-def save_local_creds(creds):
-    with open(CREDS_FILE, "w") as f:
-        json.dump(creds, f, indent=2)
+    if resp.status_code != 200:
+        try:
+            detail = resp.json()
+        except ValueError:
+            detail = resp.text
+        raise HTTPException(status_code=502, detail=f"Relay refused to start a session: {detail}")
 
-def get_credential(service: str, key: str):
-    """Check local creds file first, fall back to env vars."""
-    creds = load_local_creds()
-    if service in creds and key in creds[service]:
-        return creds[service][key]
-    return os.getenv(key)
+    session_token = resp.json().get("session_token")
+    if not session_token:
+        raise HTTPException(status_code=502, detail="Relay /session/start response missing session_token")
+    return session_token
+
+
+async def _stop_relay_session(session_token: str, *, relay_base_url: str) -> None:
+    """E3: POST /session/start (§2.2) sessions were only ever being reaped by
+    IDLE_TTL_S (120s), blocking an immediate re-sync with a 409 SessionConflict
+    in the meantime. Call this once run_browser_task has returned so the
+    session ends right away instead. Best-effort: the relay tears sessions
+    down on its own regardless, so a failure here is logged, not raised."""
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            await client.post(
+                f"{relay_base_url.rstrip('/')}/session/stop",
+                json={"session_token": session_token},
+                headers=_relay_operator_headers(),
+            )
+    except httpx.HTTPError as exc:
+        print(f"[relay] /session/stop failed for session_token={session_token!r}: {exc}")
+
+
+async def _run_browser_agent_task(
+    *, task: str, site: str, player_name: str, session_token: str, model: str | None, request: Request
+):
+    """Shared call path into Agent B's run_browser_task for the synchronous
+    Tier-1 (public, no personal login) lookup flow."""
+    if not BROWSER_AGENT_AVAILABLE:
+        raise HTTPException(
+            status_code=503,
+            detail=f"browser_agent module not available yet: {_browser_agent_import_error}",
+        )
+
+    # S2: same charset/length/control-char rules as browser_agent's own
+    # run_browser_task boundary, enforced again here at the request boundary.
+    name_error = validate_player_name(player_name)
+    if name_error:
+        raise HTTPException(status_code=400, detail=f"Invalid player_name: {name_error}")
+    task_error = validate_task_text(task)
+    if task_error:
+        raise HTTPException(status_code=400, detail=f"Invalid task: {task_error}")
+
+    openrouter_key = _get_user_openrouter_key(request)
+    if not openrouter_key:
+        raise HTTPException(
+            status_code=401,
+            detail="Missing BYOK key (X-User-Api-Key header) — required as the OpenRouter key for the browser agent.",
+        )
+
+    relay_base_url = os.getenv("RELAY_BASE_URL")
+    if not relay_base_url:
+        raise HTTPException(status_code=500, detail="RELAY_BASE_URL is not configured on the server.")
+
+    return await run_browser_task(
+        task=task,
+        site=site,
+        player_name=player_name,
+        session_token=session_token,
+        openrouter_key=openrouter_key,
+        model=model or os.getenv("BROWSER_AGENT_MODEL", "google/gemini-3-pro-preview"),
+        relay_base_url=relay_base_url,
+    )
+
+
+# --- Tier-3 gate-event SSE bridge (Phase 2 seam #1) ---
+#
+# There are two SSE layers in this platform: relay -> Agent B (B's
+# RelayGateClient, already wired against relay/server.py's
+# /session/events/{session_token}) and Agent F -> frontend
+# (StadiumSyncPanel.tsx's GET /tools/sync/stadium/events/{session_id}).
+# This module bridges them with one asyncio.Queue per in-flight sync,
+# keyed by session_id (we reuse the relay's session_token as that id — it is
+# not a credential, RELAY_ARCHITECTURE.md §5, and reusing it avoids a second
+# id-mapping table). run_browser_task's on_gate callback pushes
+# gate_open/gate_cleared/gate_timeout onto the queue; the SSE endpoint drains
+# it and formats each item as a named SSE event, ending on "done" or
+# "gate_timeout" per the frontend's own stream-closing logic.
+_sync_event_queues: dict[str, "asyncio.Queue[tuple[str, dict]]"] = {}
+
+
+async def _run_and_stream_browser_task(
+    *,
+    session_id: str,
+    task: str,
+    site: str,
+    player_name: str,
+    session_token: str,
+    model: str | None,
+    openrouter_key: str,
+    relay_base_url: str,
+) -> None:
+    """Runs run_browser_task in the background and streams its gate events +
+    final result onto _sync_event_queues[session_id]. This is a detached
+    asyncio.Task with no caller to propagate exceptions to, so the outer
+    try/except is not a fallback path — it is the one way to turn an
+    otherwise-swallowed exception into the single terminal SSE event the
+    frontend is waiting on, so the stream always terminates."""
+    queue = _sync_event_queues[session_id]
+
+    async def on_gate(evt: dict) -> None:
+        await queue.put(
+            (evt["event"], {"gate_id": evt["gate_id"], "kind": evt["kind"], "hint": evt["hint"], "url_host": evt["url_host"]})
+        )
+
+    try:
+        result = await run_browser_task(
+            task=task,
+            site=site,
+            player_name=player_name,
+            session_token=session_token,
+            openrouter_key=openrouter_key,
+            model=model or os.getenv("BROWSER_AGENT_MODEL", "google/gemini-3-pro-preview"),
+            relay_base_url=relay_base_url,
+            on_gate=on_gate,
+        )
+    except Exception as exc:  # noqa: BLE001 - see docstring: terminates the SSE stream cleanly
+        await queue.put(
+            ("done", {"status": "llm_error", "matches": [], "steps_used": 0, "error": {"type": type(exc).__name__, "detail": str(exc)}})
+        )
+        await _stop_relay_session(session_token, relay_base_url=relay_base_url)  # E3
+        _sync_event_queues.pop(session_id, None)  # E4: also reached if the SSE side never connects
+        return
+
+    await queue.put(
+        ("done", {"status": result.status, "matches": result.matches, "steps_used": result.steps_used, "error": result.error})
+    )
+    await _stop_relay_session(session_token, relay_base_url=relay_base_url)  # E3
+    _sync_event_queues.pop(session_id, None)  # E4: also reached if the SSE side never connects
+
+
+async def _start_tier3_sync(*, task: str, site: str, player_name: str, model: str | None, request: Request) -> dict:
+    """Provisions a relay session, kicks off the browser-agent run in the
+    background, and returns {"session_id": ...} immediately — matching
+    StadiumSyncPanel.tsx's contract (POST resp: { session_id } | { error })."""
+    if not BROWSER_AGENT_AVAILABLE:
+        raise HTTPException(
+            status_code=503,
+            detail=f"browser_agent module not available yet: {_browser_agent_import_error}",
+        )
+
+    # S2: same charset/length/control-char rules as browser_agent's own
+    # run_browser_task boundary, enforced again here at the request boundary
+    # — before a relay session is minted for a bad name.
+    name_error = validate_player_name(player_name)
+    if name_error:
+        raise HTTPException(status_code=400, detail=f"Invalid player_name: {name_error}")
+    task_error = validate_task_text(task)
+    if task_error:
+        raise HTTPException(status_code=400, detail=f"Invalid task: {task_error}")
+
+    openrouter_key = _get_user_openrouter_key(request)
+    if not openrouter_key:
+        raise HTTPException(
+            status_code=401,
+            detail="Missing BYOK key (X-User-Api-Key header) — required as the OpenRouter key for the browser agent.",
+        )
+
+    relay_base_url = os.getenv("RELAY_BASE_URL")
+    if not relay_base_url:
+        raise HTTPException(status_code=500, detail="RELAY_BASE_URL is not configured on the server.")
+
+    register_token = os.getenv("RELAY_REGISTER_TOKEN")
+    if not register_token:
+        raise HTTPException(
+            status_code=503,
+            detail="No companion registered (RELAY_REGISTER_TOKEN unset) — launch your companion first, see docs/PLATFORM_RUNBOOK.md.",
+        )
+
+    session_token = await _provision_relay_session(register_token, relay_base_url=relay_base_url)
+    session_id = session_token
+    _sync_event_queues[session_id] = asyncio.Queue()
+
+    asyncio.create_task(
+        _run_and_stream_browser_task(
+            session_id=session_id,
+            task=task,
+            site=site,
+            player_name=player_name,
+            session_token=session_token,
+            model=model,
+            openrouter_key=openrouter_key,
+            relay_base_url=relay_base_url,
+        )
+    )
+    return {"session_id": session_id}
+
+
+def _sse_response_for_sync_session(session_id: str) -> StreamingResponse:
+    queue = _sync_event_queues.get(session_id)
+    if queue is None:
+        raise HTTPException(status_code=404, detail=f"Unknown or expired sync session_id={session_id!r}")
+
+    async def _stream():
+        try:
+            while True:
+                try:
+                    event_name, data = await asyncio.wait_for(queue.get(), timeout=15.0)
+                except asyncio.TimeoutError:
+                    # C2: keep the stream alive through Cloudflare's ~100s idle
+                    # cutoff during a silent gate wait.
+                    yield ": keepalive\n\n"
+                    continue
+                yield f"event: {event_name}\ndata: {json.dumps(data)}\n\n"
+                if event_name in ("done", "gate_timeout"):
+                    return
+        finally:
+            _sync_event_queues.pop(session_id, None)
+
+    return StreamingResponse(_stream(), media_type="text/event-stream")
 
 
 # Initialize BrowserManager for tools
@@ -134,6 +425,25 @@ def _require_api_key(request: Request) -> None:
     if provided != required:
         raise HTTPException(status_code=401, detail="Unauthorized")
 
+
+def _require_operator_token(request: Request) -> None:
+    """S1 hardening: owner-only gate on the Tier-3 sync + Tier-1 lookup
+    endpoints (/tools/sync/stadium, /tools/sync/omnipong, their
+    /events/{session_id} SSE routes, /tools/lookup/usatt). These endpoints
+    drive a real browser through the relay, so they must never be reachable
+    anonymously. Fails closed: if OPERATOR_TOKEN isn't configured, the
+    endpoint refuses (503) rather than running open — no fallback to "no
+    token configured = open"."""
+    required = os.getenv("OPERATOR_TOKEN")
+    if not required:
+        raise HTTPException(
+            status_code=503,
+            detail="OPERATOR_TOKEN is not configured on the server — owner-gated endpoints refuse to run open.",
+        )
+    provided = request.headers.get("X-Operator-Token")
+    if provided != required:
+        raise HTTPException(status_code=401, detail="Missing or invalid X-Operator-Token header.")
+
 # Database connection
 # Priority: env var (for Production/Render) > local sqlite file (Development)
 DATABASE_URL = os.getenv("DATABASE_URL")
@@ -174,17 +484,17 @@ def get_demo_profile():
             text("""
                 SELECT
                     COUNT(*) as total_matches,
-                    SUM(CASE WHEN result = 'win' THEN 1 ELSE 0 END) as wins,
-                    SUM(CASE WHEN result = 'loss' THEN 1 ELSE 0 END) as losses
+                    SUM(CASE WHEN result = 'Win' THEN 1 ELSE 0 END) as wins,
+                    SUM(CASE WHEN result = 'Loss' THEN 1 ELSE 0 END) as losses
                 FROM matches
             """)
         ).fetchone()
 
         recent = session.execute(
             text("""
-                SELECT opponent_name, result, match_date, player_score, opponent_score
+                SELECT opponent_name, result, date as match_date, score_summary, set_scores
                 FROM matches
-                ORDER BY match_date DESC
+                ORDER BY date DESC
                 LIMIT 10
             """)
         ).fetchall()
@@ -205,7 +515,7 @@ def get_demo_profile():
 def get_user():
     session = SessionLocal()
     try:
-        # Fetch the main user (Justin)
+        # Fetch the main user (the configured player)
         result = session.execute(
             text(
                 "SELECT name as full_name, current_rating as rating, usatt_id as usatt_number, phone_number FROM users LIMIT 1"
@@ -226,44 +536,6 @@ def get_user():
         raise HTTPException(status_code=500, detail=str(e))
     finally:
         session.close()
-
-
-@app.get("/credentials")
-def get_credentials():
-    """Return which services have saved credentials (never returns passwords)."""
-    creds = load_local_creds()
-    return {
-        "omnipong": {"configured": "omnipong" in creds, "username": creds.get("omnipong", {}).get("username", "")},
-        "stadium": {"configured": "stadium" in creds, "username": creds.get("stadium", {}).get("username", "")},
-    }
-
-
-@app.post("/credentials")
-def set_credentials(cred: CredentialUpdate):
-    """Save credentials locally for the agent to use."""
-    creds = load_local_creds()
-    env_map = {
-        "omnipong": {"username": "OMNIPONG_USER", "password": "OMNIPONG_PASS"},
-        "stadium": {"username": "STADIUM_USER", "password": "STADIUM_PASS"},
-    }
-    if cred.service not in env_map:
-        raise HTTPException(status_code=400, detail=f"Unknown service: {cred.service}")
-    keys = env_map[cred.service]
-    creds[cred.service] = {"username": cred.username, "password": cred.password}
-    # Also set env vars so BrowserManager picks them up immediately
-    os.environ[keys["username"]] = cred.username
-    os.environ[keys["password"]] = cred.password
-    save_local_creds(creds)
-    return {"status": "saved", "service": cred.service}
-
-
-@app.delete("/credentials/{service}")
-def delete_credentials(service: str):
-    """Remove saved credentials for a service."""
-    creds = load_local_creds()
-    creds.pop(service, None)
-    save_local_creds(creds)
-    return {"status": "removed", "service": service}
 
 
 @app.get("/matches")
@@ -564,21 +836,148 @@ async def shutdown_event():
             print(f"Error terminating process {process.pid}: {e}")
 
 
-@app.post("/sync/stadium")
-async def sync_stadium():
-    try:
-        # Trigger Stadium Scraper
-        script_path = os.path.abspath(
-            os.path.join(os.path.dirname(__file__), "stadium_scraper.py")
-        )
-        code, stdout, stderr = await run_script_managed(script_path)
+@app.post("/tools/sync/stadium")
+async def tool_sync_stadium(req: StadiumSyncStartRequest, request: Request):
+    """Tier-3: pull the user's OWN Stadium (stadiumcompete.com) match history
+    through their own already-logged-in browser via the relay — no stored
+    credentials, ever (RELAY_ARCHITECTURE.md §2/§5). The user logs into Stadium
+    themselves in their own Chrome; this only drives that tab.
 
-        if code == 0:
-            return {"status": "success", "log": stdout.decode()}
-        else:
-            return {"status": "error", "log": stderr.decode()}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    Matches StadiumSyncPanel.tsx's contract: starts the run in the
+    background and returns {"session_id": ...} immediately; gate prompts and
+    the final result stream over GET /tools/sync/stadium/events (Phase 2
+    seam #1). Private per-user data is handed straight to the frontend for
+    the user's own IndexedDB ledger — it is NOT written to the server DB
+    (build plan: "private per-user scraped data lives in the user's browser").
+    """
+    _require_operator_token(request)
+    return await _start_tier3_sync(
+        task=(
+            "Open the Stadium (stadiumcompete.com) matches/dashboard for the "
+            "already logged-in user and extract their match history: for each "
+            "match, the opponent name, date, result, score summary, and set "
+            "scores."
+        ),
+        site="stadium",
+        player_name=req.player_name or PLAYER_FULL_NAME,
+        model=req.model,
+        request=request,
+    )
+
+
+@app.get("/tools/sync/stadium/events/{session_id}")
+async def tool_sync_stadium_events(session_id: str, request: Request) -> StreamingResponse:
+    """SSE push channel for the sync started by POST /tools/sync/stadium.
+    Event names/payloads match StadiumSyncPanel.tsx exactly: gate_open,
+    gate_cleared, gate_timeout, done (BrowserTaskResult).
+
+    S5: session_id (the relay session_token) is a path segment, not a query
+    string param — query strings land in proxy/access logs and browser
+    history, against RELAY_ARCHITECTURE.md §5's own rule."""
+    _require_operator_token(request)
+    return _sse_response_for_sync_session(session_id)
+
+
+@app.post("/tools/sync/omnipong")
+async def tool_sync_omnipong_personal(req: StadiumSyncStartRequest, request: Request):
+    """Tier-3: pull the user's OWN OmniPong match/tournament history through
+    their own already-logged-in browser via the relay. Same no-stored-creds,
+    background+SSE contract as /tools/sync/stadium — distinct from
+    /sync/omnipong, which refreshes the Tier-2 public feed under the owner's
+    own login."""
+    _require_operator_token(request)
+    return await _start_tier3_sync(
+        task=(
+            "Open the OmniPong (omnipong.com) 'My Matches' / tournament history "
+            "page for the already logged-in user and extract match results and "
+            "tournament entries."
+        ),
+        site="omnipong",
+        player_name=req.player_name or PLAYER_FULL_NAME,
+        model=req.model,
+        request=request,
+    )
+
+
+@app.get("/tools/sync/omnipong/events/{session_id}")
+async def tool_sync_omnipong_events(session_id: str, request: Request) -> StreamingResponse:
+    """SSE push channel for the sync started by POST /tools/sync/omnipong.
+    S5: session_id in the path, not the query string — see
+    tool_sync_stadium_events's docstring."""
+    _require_operator_token(request)
+    return _sse_response_for_sync_session(session_id)
+
+
+@app.get("/tools/lookup/usatt")
+async def tool_lookup_usatt(name: str, request: Request, session_token: str | None = None):
+    """Tier-1: public name -> USATT rating/tournament history lookup, no login.
+
+    USATT (usatt.simplycompete.com) is Cloudflare-walled against plain
+    requests/fetch (confirmed during Phase-0 spec research), so this cannot be
+    a server-side HTTP call — it must go through a REAL browser. Per the build
+    plan's Tier-1 row ("real browser via relay"), this reuses the same
+    browser-agent/relay path as Tier-3, but against a shared "public" companion
+    session that requires no personal login, rather than a per-visitor one.
+
+    Method + response shape match the frontend's contract exactly
+    (rubberr/frontend/src/app/lookup/page.tsx) — Phase 2 seam #3 resolved by
+    switching this endpoint from POST to GET (E's side) and reshaping the
+    response from the generic BrowserTaskResult.matches[] into
+    {status, player, rating_history, tournaments} (browser_agent.py's
+    site == "usatt" branch returns matches == [profile_dict] for exactly
+    this purpose, see extract_usatt_profile).
+
+    The shared public companion session is provisioned here (Phase 2 seam
+    #4) by calling relay POST /session/start with RELAY_PUBLIC_REGISTER_TOKEN
+    — the register token of an always-on companion+browser running on Y6
+    (see docs/PLATFORM_RUNBOOK.md). Callers may instead pass their own
+    session_token if they already have a live companion. If neither is
+    available this fails loudly with a clean 503 — no mocked/fake data is
+    ever returned.
+    """
+    _require_operator_token(request)
+    # S2: reject a bad `name` before minting a relay session for it.
+    if BROWSER_AGENT_AVAILABLE:
+        name_error = validate_player_name(name)
+        if name_error:
+            raise HTTPException(status_code=400, detail=f"Invalid name: {name_error}")
+
+    relay_base_url = os.getenv("RELAY_BASE_URL")
+    if not relay_base_url:
+        raise HTTPException(status_code=500, detail="RELAY_BASE_URL is not configured on the server.")
+
+    if session_token is None:
+        public_register_token = os.getenv("RELAY_PUBLIC_REGISTER_TOKEN")
+        if not public_register_token:
+            raise HTTPException(
+                status_code=503,
+                detail="No public relay companion configured (RELAY_PUBLIC_REGISTER_TOKEN unset).",
+            )
+        session_token = await _provision_relay_session(public_register_token, relay_base_url=relay_base_url)
+
+    result = await _run_browser_agent_task(
+        task=f"Look up USATT rating/history/tournaments for '{name}'.",
+        site="usatt",
+        player_name=name,
+        session_token=session_token,
+        model=None,
+        request=request,
+    )
+    await _stop_relay_session(session_token, relay_base_url=relay_base_url)  # E3
+
+    if result.status != "ok":
+        return _browser_task_error(result)
+
+    profile = result.matches[0] if result.matches else {"not_found": True, "player": None, "rating_history": [], "tournaments": []}
+    if profile.get("not_found") or not profile.get("player"):
+        return {"status": "not_found", "message": f'No USATT record found for "{name}"'}
+
+    return {
+        "status": "success",
+        "player": profile["player"],
+        "rating_history": profile.get("rating_history") or [],
+        "tournaments": profile.get("tournaments") or [],
+    }
 
 
 @app.get("/tools/context")
@@ -1554,8 +1953,8 @@ def get_tool_tournament_intelligence(tournament_title: str = None, limit: int = 
 # ============================================
 
 # System Prompt to define the AI's persona and context
-SYSTEM_PROMPT = """You are 'Coach Rubberr', a world-class AI table tennis coach and analyst. 
-You help user 'Justin' manage his table tennis career by analyzing match data, tracking progress, and finding tournaments.
+SYSTEM_PROMPT = f"""You are 'Coach Rubberr', a world-class AI table tennis coach and analyst.
+You help user '{PLAYER_NAME}' manage their table tennis career by analyzing match data, tracking progress, and finding tournaments.
 
 CONCISENESS IS CRITICAL:
 - Be extremely concise and direct. 
@@ -1567,7 +1966,7 @@ CONCISENESS IS CRITICAL:
 Persona:
 - Professional, encouraging, and human-like.
 - Provide psychological insights only when relevant to a specific match or trend being discussed.
-- You are Justin's personal coach. Be helpful but don't over-explain.
+- You are {PLAYER_NAME}'s personal coach. Be helpful but don't over-explain.
 
 DATA STRATEGY:
 1. ALWAYS start with `get_context` to see the current state.
@@ -1578,15 +1977,10 @@ DATA STRATEGY:
 
 
 def get_anthropic_client():
-    try:
-        key_path = os.path.expanduser("~/.anthropic/api_key")
-        if os.path.exists(key_path):
-            with open(key_path, "r") as f:
-                api_key = f.read().strip()
-                return anthropic.Anthropic(api_key=api_key)
-    except:
-        pass
-    return None
+    api_key = os.getenv("ANTHROPIC_API_KEY")
+    if not api_key:
+        raise ValueError("ANTHROPIC_API_KEY not found in environment")
+    return anthropic.Anthropic(api_key=api_key)
 
 
 # Tool definitions for Claude
@@ -1598,7 +1992,7 @@ CLAUDE_TOOLS = [
     },
     {
         "name": "get_stats",
-        "description": "Get Justin's current stats (win rate, trend, patterns) for USATT or Club League.",
+        "description": "Get the player's current stats (win rate, trend, patterns) for USATT or Club League.",
         "input_schema": {
             "type": "object",
             "properties": {
@@ -1612,7 +2006,7 @@ CLAUDE_TOOLS = [
     },
     {
         "name": "query_matches",
-        "description": "Search Justin's match history with filters.",
+        "description": "Search the player's match history with filters.",
         "input_schema": {
             "type": "object",
             "properties": {
@@ -1705,12 +2099,6 @@ async def get_claude_response(user_message: str, user_key: str = None):
         client = anthropic.Anthropic(api_key=user_key)
     else:
         client = get_anthropic_client()
-        if not client:
-            api_key = os.getenv("ANTHROPIC_API_KEY")
-            if api_key:
-                client = anthropic.Anthropic(api_key=api_key)
-            else:
-                return "Error: Anthropic API key not found. Please set ANTHROPIC_API_KEY."
 
     # Use the model that we verified works (reverting to original)
     model = "claude-sonnet-4-5"
@@ -1908,7 +2296,7 @@ def update_phone(data: PhoneUpdate):
             )
         else:
             # Create dummy user if needed? Should exist.
-            # Assuming 'Justin' exists from migration.
+            # Assuming the primary user exists from migration.
             pass
 
         session.commit()
@@ -1969,7 +2357,7 @@ async def get_player_scouting(player_name: str, _: None = Depends(_require_api_k
         wins = sum(
             1
             for m in matches
-            if m["winner_name"] == "Justin Johnson"
+            if m["winner_name"] == PLAYER_FULL_NAME
             or m["result"] == "Win"
             or m["result"] == "W"
         )
@@ -1984,14 +2372,14 @@ async def get_player_scouting(player_name: str, _: None = Depends(_require_api_k
         )
 
         prompt = f"""
-        You are a Table Tennis Scout. Analyze the following match history for 'Justin Johnson' against '{player_name}'.
-        
+        You are a Table Tennis Scout. Analyze the following match history for '{PLAYER_FULL_NAME}' against '{player_name}'.
+
         MATCH HISTORY:
         {match_summary}
-        
+
         TASK:
         1. Identify the opponent's likely style based on the results and scores (e.g., blocker, attacker, chopper).
-        2. Highlight Justin's vulnerabilities in these matches (e.g., "loses long rallies", "struggles in deciding sets").
+        2. Highlight the player's vulnerabilities in these matches (e.g., "loses long rallies", "struggles in deciding sets").
         3. Provide 3 specific tactical "Keys to Victory" for the next match.
         4. Keep it concise, strategic, and professional.
         """
@@ -2078,7 +2466,7 @@ async def get_training_recommendations():
         # 2. Construct prompt for training advice
         prompt = f"""
         You are Coach Rubberr, a world-class table tennis coach.
-        Analyze Justin's recent performance patterns across {total} matches and suggest a training plan.
+        Analyze the player's recent performance patterns across {total} matches and suggest a training plan.
         
         PATTERNS:
         - Comebacks (Won after losing Set 1): {comebacks}

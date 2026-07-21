@@ -125,4 +125,5 @@ To distribute: configure your Twilio credentials in `.env` and submit to TestFli
 
 ## License
 
-MIT
+Apache License 2.0 — see [LICENSE](LICENSE) and [NOTICE](NOTICE).
+Copyright 2026 Justin Johnson.

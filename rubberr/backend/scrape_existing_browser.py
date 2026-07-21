@@ -4,6 +4,11 @@ Quick script to scrape set scores from the currently open Stadium browser page
 import asyncio
 from playwright.async_api import async_playwright
 import json
+import os
+
+# Write debug artifacts next to this script, not to a hardcoded absolute path.
+DEBUG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "debug")
+os.makedirs(DEBUG_DIR, exist_ok=True)
 
 async def scrape_current_page():
     async with async_playwright() as p:
@@ -33,7 +38,7 @@ async def scrape_current_page():
             print(f"Found Stadium page: {stadium_page.url}")
             
             # Take screenshot
-            await stadium_page.screenshot(path="/Users/jjohnson/Desktop/omnipong/rubberr/backend/debug/current_page.png", full_page=True)
+            await stadium_page.screenshot(path=os.path.join(DEBUG_DIR, "current_page.png"), full_page=True)
             print("Screenshot saved")
             
             # Get all match cards
@@ -155,7 +160,7 @@ async def scrape_current_page():
                     print(f"  Error: {e}")
             
             # Save results
-            with open('/Users/jjohnson/Desktop/omnipong/rubberr/backend/debug/scraped_matches.json', 'w') as f:
+            with open(os.path.join(DEBUG_DIR, "scraped_matches.json"), 'w') as f:
                 json.dump(matches_data, f, indent=2)
             
             print(f"\\n✅ Saved results to scraped_matches.json")

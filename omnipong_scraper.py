@@ -11,21 +11,39 @@ DATABASE_URL = "sqlite+aiosqlite:///./omnipong.db"
 engine = create_async_engine(DATABASE_URL)
 AsyncSessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
+
 async def init_db():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     print("Database initialized.")
 
+
 class OmniPongScraper:
     def __init__(self, browser_manager: BrowserManager):
         self.browser_manager = browser_manager
+
+    def _normalize_source_id(self, source_id: str) -> str:
+        """
+        Normalize source_id by extracting the tournament ID parameter (r= or h=)
+        This prevents duplicates from different URL formats pointing to the same tournament
+        """
+        if not source_id:
+            return ""
+
+        # Look for r= or h= parameter followed by digits
+        match = re.search(r"[rh]=(\d+)", source_id)
+        if match:
+            return f"tourney_id_{match.group(1)}"
+
+        # If no parameter found, return original but stripped
+        return source_id.strip()
 
     async def scrape_activities(self, type_id: int):
         """
         type_id: 0 for Tournaments, 1 for Leagues, 2 for Camps/Classes
         """
         page = await self.browser_manager.get_page()
-        
+
         # Relay console logs to terminal
         page.on("console", lambda msg: print(f"BROWSER DEBUG: {msg.text}"))
 
@@ -33,7 +51,11 @@ class OmniPongScraper:
         print(f"Scraping activities from {url}...")
         await page.goto(url)
         await page.wait_for_load_state("domcontentloaded")
-        await asyncio.sleep(3)
+        # await asyncio.sleep(3) # Removed fixed wait
+        try:
+            await page.wait_for_load_state("networkidle", timeout=5000)
+        except:
+            pass  # Proceed if network doesn't settle, data might be there
 
         # High-fidelity extraction
         activities_data = await page.evaluate("""
@@ -133,31 +155,37 @@ class OmniPongScraper:
         for data in activities_data:
             # Basic parsing of contact_html for name/email/phone
             import re
-            email_match = re.search(r'mailto:([\w\.-]+@[\w\.-]+)', data["contact_html"])
+
+            email_match = re.search(r"mailto:([\w\.-]+@[\w\.-]+)", data["contact_html"])
             email = email_match.group(1) if email_match else None
-            
+
             from bs4 import BeautifulSoup
-            soup = BeautifulSoup(data["contact_html"], 'html.parser')
-            contact_text = soup.get_text(separator='\n').strip().split('\n')
+
+            soup = BeautifulSoup(data["contact_html"], "html.parser")
+            contact_text = soup.get_text(separator="\n").strip().split("\n")
             contact_name = contact_text[0] if contact_text else None
             contact_phone = contact_text[1] if len(contact_text) > 1 else None
 
-            activities.append({
-                "source": "omnipong",
-                "source_id": data["source_id"],
-                "title": data["title"],
-                "location": data["location"],
-                "city_state": data["location"],
-                "date_range": data["date"],
-                "activity_type": "tournament" if type_id == 0 else ("league" if type_id == 1 else "camp"),
-                "status": "upcoming",
-                "url": url,
-                "contact_name": contact_name,
-                "contact_email": email,
-                "contact_phone": contact_phone
-            })
-        
-        print(f"Extracted {len(activities)} valid activities")    
+            activities.append(
+                {
+                    "source": "omnipong",
+                    "source_id": data["source_id"],
+                    "title": data["title"],
+                    "location": data["location"],
+                    "city_state": data["location"],
+                    "date_range": data["date"],
+                    "activity_type": "tournament"
+                    if type_id == 0
+                    else ("league" if type_id == 1 else "camp"),
+                    "status": "upcoming",
+                    "url": url,
+                    "contact_name": contact_name,
+                    "contact_email": email,
+                    "contact_phone": contact_phone,
+                }
+            )
+
+        print(f"Extracted {len(activities)} valid activities")
         return activities
 
     async def scrape_activity_details(self, source_id: str):
@@ -166,14 +194,18 @@ class OmniPongScraper:
         """
         page = await self.browser_manager.get_page()
         # Ensure source_id is a full path or relative
-        path = source_id if source_id.startswith('/') else f"/{source_id}"
+        path = source_id if source_id.startswith("/") else f"/{source_id}"
         url = f"https://www.omnipong.com{path}"
         print(f"Scraping details from {url}...")
         try:
             await page.goto(url)
             await page.wait_for_load_state("domcontentloaded")
-            await asyncio.sleep(1)
-            
+            # await asyncio.sleep(1)
+            try:
+                await page.wait_for_load_state("networkidle", timeout=3000)
+            except:
+                pass
+
             details = await page.evaluate("""
                 () => {
                     const bodyText = document.body.innerText;
@@ -199,14 +231,16 @@ class OmniPongScraper:
         contacts = []
         for a in activities:
             if a["contact_name"] or a["contact_email"]:
-                contacts.append({
-                    "name": a["contact_name"],
-                    "email": a["contact_email"],
-                    "phone": a["contact_phone"],
-                    "role": "Coach",
-                    "club_affiliation": a["location"],
-                    "source_url": a["url"]
-                })
+                contacts.append(
+                    {
+                        "name": a["contact_name"],
+                        "email": a["contact_email"],
+                        "phone": a["contact_phone"],
+                        "role": "Coach",
+                        "club_affiliation": a["location"],
+                        "source_url": a["url"],
+                    }
+                )
         return contacts, activities
 
     async def save_activities(self, activities_data):
@@ -214,38 +248,43 @@ class OmniPongScraper:
         async with AsyncSessionLocal() as session:
             for i, data in enumerate(activities_data):
                 from sqlalchemy import select
+
                 stmt = select(Activity).where(Activity.source_id == data["source_id"])
                 result = await session.execute(stmt)
                 existing = result.scalar_one_or_none()
-                
+
                 if existing:
                     for key, value in data.items():
-                        if hasattr(existing, key) and key != 'events':
+                        if hasattr(existing, key) and key != "events":
                             setattr(existing, key, value)
                     existing.last_scraped = datetime.utcnow()
-                    
+
                     # Update Events if provided
                     if "events" in data and data["events"]:
                         # Clear old events to avoid duplicates (simple sync)
                         from models import Event
-                        await session.execute(delete(Event).where(Event.activity_id == existing.id))
+
+                        await session.execute(
+                            delete(Event).where(Event.activity_id == existing.id)
+                        )
                         for evt_data in data["events"]:
                             evt = Event(**evt_data)
                             evt.activity_id = existing.id
                             session.add(evt)
-                            
+
                 else:
                     activity = Activity(**data)
                     session.add(activity)
-                    await session.flush() # Get ID
-                    
+                    await session.flush()  # Get ID
+
                     if "events" in data and data["events"]:
                         from models import Event
+
                         for evt_data in data["events"]:
                             evt = Event(**evt_data)
                             evt.activity_id = activity.id
                             session.add(evt)
-            
+
             await session.commit()
             print(f"Successfully synced {len(activities_data)} activities")
 
@@ -255,62 +294,61 @@ class OmniPongScraper:
         """
         async with AsyncSessionLocal() as session:
             from sqlalchemy import select
+
             stmt = select(Activity).where(Activity.raw_details == None)
             if limit:
                 stmt = stmt.limit(limit)
-            
+
             result = await session.execute(stmt)
             activities = result.scalars().all()
-            
+
             print(f"Found {len(activities)} activities needing details...")
-            
+
             for i, activity in enumerate(activities):
-                print(f"[{i+1}/{len(activities)}] Scraping details for: {activity.title}")
+                print(
+                    f"[{i + 1}/{len(activities)}] Scraping details for: {activity.title}"
+                )
                 details = await self.scrape_activity_details(activity.source_id)
                 if details:
                     activity.flyer_url = details["flyer_url"]
                     activity.raw_details = details["raw_details"]
                     activity.last_scraped = datetime.utcnow()
-                    
+
                     if i % 10 == 0:
                         await session.commit()
-                        print(f"Saved {i+1} details...")
-            
+                        print(f"Saved {i + 1} details...")
+
             await session.commit()
             print("Deep scrape complete.")
 
     async def scrape_activity_events(self, source_id: str):
         """
-        Navigates to the entry page for an activity and scrapes the available events.
-        """
-    async def scrape_activity_events(self, source_id: str):
-        """
         Navigates to the entry page by finding the 'Enter' button on the list page.
         """
         page = await self.browser_manager.get_page()
-        
+
         # Determine list URL based on source_id or lookup
         # Simple heuristic: T-tourney.asp usually implies e=0 (Tournament) or e=1 (League)
         # We can try e=0 first, then e=1 if not found.
-        
-        # Optimization: We should pass the type or guess it. 
+
+        # Optimization: We should pass the type or guess it.
         # For this implementation, we will search both e=0 and e=1 if needed.
-        
+
         # Search all types: 0 (Tourney), 1 (League), 2 (Camp) + Regional
         list_urls = [
-            "https://www.omnipong.com/t-tourney.asp?e=0", 
+            "https://www.omnipong.com/t-tourney.asp?e=0",
             "https://www.omnipong.com/t-tourney.asp?e=1",
             "https://www.omnipong.com/t-tourney.asp?e=2",
-            "https://www.omnipong.com/T-tourney.asp?t=8&Region=8&y=&k=&e=0"
+            "https://www.omnipong.com/T-tourney.asp?t=8&Region=8&y=&k=&e=0",
         ]
         entry_url = None
-        
+
         print(f"Searching for 'Enter' button for {source_id}...")
-        
+
         for list_url in list_urls:
             await page.goto(list_url)
             await page.wait_for_load_state("domcontentloaded")
-            
+
             # Find the row that contains a link to source_id AND has an 'Enter' button/link
             found_url = await page.evaluate(f"""
                 () => {{
@@ -349,11 +387,11 @@ class OmniPongScraper:
                     return null;
                 }}
             """)
-            
+
             if found_url:
                 entry_url = found_url
                 break
-        
+
         if not entry_url:
             print(f"Could not find 'Enter' button for {source_id} on list pages.")
             return []
@@ -361,7 +399,7 @@ class OmniPongScraper:
         print(f"Found entry URL: {entry_url}. Navigating...")
         await page.goto(entry_url)
         await page.wait_for_load_state("domcontentloaded")
-        
+
         # 1. Look for 'Events' button to show the list
         has_events_btn = await page.evaluate("""
             () => {
@@ -374,11 +412,16 @@ class OmniPongScraper:
                 return false;
             }
         """)
-        
+
         if has_events_btn:
             print("Clicked 'Events' button... waiting for table.")
-            await page.wait_for_load_state("networkidle")
-            await asyncio.sleep(2)
+            print("Clicked 'Events' button... waiting for table.")
+            await page.wait_for_load_state("domcontentloaded")
+            # await asyncio.sleep(2)
+            try:
+                await page.wait_for_selector("table.omnipong", timeout=5000)
+            except:
+                pass
 
         # 2. Extract Events
         events_data = await page.evaluate("""
@@ -530,21 +573,21 @@ class OmniPongScraper:
                 return results;
             }
         """)
-        
+
         # Save matches
         if matches:
             print(f"Found {len(matches)} matches. Saving...")
             async with AsyncSessionLocal() as session:
                 from models import Match
                 from datetime import datetime
-                
+
                 # ideally check for duplicates
                 for m in matches:
                     try:
                         dt = datetime.strptime(m["date_str"], "%m/%d/%Y").date()
                     except:
                         dt = None
-                    
+
                     # Dedup check (simple)
                     # For now just insert if not exists (complex due to no unique ID on match)
                     # We will append for this demo.
@@ -553,16 +596,15 @@ class OmniPongScraper:
                         opponent_name=m["opponent_name"],
                         opponent_rating=m["opponent_rating"],
                         score_summary=m["score_summary"],
-                        source="omnipong"
+                        source="omnipong",
                     )
                     session.add(match)
                 await session.commit()
                 print("Matches saved.")
         else:
             print("No matches found on history page.")
-        
-        return matches
 
+        return matches
 
     async def scrape_rating_history(self):
         """
@@ -571,9 +613,11 @@ class OmniPongScraper:
         """
         page = await self.browser_manager.get_page()
         print("Scraping USATT Rating History...")
-        await page.goto("https://www.omnipong.com/Members.asp?s=2") # s=2 is typically My Tournaments
+        await page.goto(
+            "https://www.omnipong.com/Members.asp?s=2"
+        )  # s=2 is typically My Tournaments
         await page.wait_for_load_state("domcontentloaded")
-        
+
         ratings = await page.evaluate("""
             () => {
                 const results = [];
@@ -623,33 +667,36 @@ class OmniPongScraper:
                 return results;
             }
         """)
-        
+
         if ratings:
             print(f"Found {len(ratings)} historical rating points from tournaments.")
             async with AsyncSessionLocal() as session:
                 from models import RatingHistory
-                
+
                 # Clear existing USATT history to avoid dupes/mess
                 # await session.execute(delete(RatingHistory).where(RatingHistory.source == 'omnipong'))
-                
+
                 for r in ratings:
                     try:
                         dt = datetime.strptime(r["date_str"], "%m/%d/%Y").date()
                         # Check exist
                         from sqlalchemy import select
-                        stmt = select(RatingHistory).where(RatingHistory.source == 'omnipong', RatingHistory.date == dt)
+
+                        stmt = select(RatingHistory).where(
+                            RatingHistory.source == "omnipong", RatingHistory.date == dt
+                        )
                         res = await session.execute(stmt)
                         if not res.scalar_one_or_none():
                             rh = RatingHistory(
                                 date=dt,
                                 rating=r["rating"],
                                 source="omnipong",
-                                notes="Tournament Result"
+                                notes="Tournament Result",
                             )
                             session.add(rh)
                     except Exception as e:
                         print(f"Error saving rating point: {e}")
-                
+
                 await session.commit()
                 print("USATT Rating History saved.")
         else:
@@ -660,16 +707,16 @@ class OmniPongScraper:
         Navigates to the tournament entries page and extracts player ratings.
         """
         page = await self.browser_manager.get_page()
-        if source_id.startswith('http'):
+        if source_id.startswith("http"):
             base_url = source_id
         else:
             base_url = f"https://www.omnipong.com/{source_id}"
-            
+
         print(f"Scraping entries from {base_url}...")
-        
+
         await page.goto(base_url)
         await page.wait_for_load_state("domcontentloaded")
-        
+
         # 1. Find 'Entries', 'Players', 'Standings', 'Results' link
         entries_url = await page.evaluate("""
             () => {
@@ -682,15 +729,17 @@ class OmniPongScraper:
                 return valid ? valid.href : null;
             }
         """)
-        
+
         if not entries_url:
-            print(f"No specific 'Entries' link found for {base_url}. Checking if current page has a player table...")
-            entries_url = base_url # Fallback to current page
+            print(
+                f"No specific 'Entries' link found for {base_url}. Checking if current page has a player table..."
+            )
+            entries_url = base_url  # Fallback to current page
         else:
             print(f"Found Entries link: {entries_url}")
             await page.goto(entries_url)
             await page.wait_for_load_state("domcontentloaded")
-            
+
         # 2. Extract Players and Ratings
         players = await page.evaluate("""
             () => {
@@ -750,7 +799,7 @@ class OmniPongScraper:
                 return results;
             }
         """)
-        
+
         print(f"Found {len(players)} players with ratings.")
         return players
 
@@ -761,16 +810,18 @@ class OmniPongScraper:
         page = await self.browser_manager.get_page()
         # Parse t=ID
         import re
-        t_match = re.search(r'[Tt]-tourney\.asp\?t=(\d+)', source_id)
-        if not t_match: return []
+
+        t_match = re.search(r"[Tt]-tourney\.asp\?t=(\d+)", source_id)
+        if not t_match:
+            return []
         t_id = t_match.group(1)
-        
+
         base_url = f"https://www.omnipong.com/T-tourney.asp?t={t_id}"
         print(f"Scraping results for tournament {t_id}...")
-        
+
         await page.goto(base_url)
         await page.wait_for_load_state("domcontentloaded")
-        
+
         # Find 'Results' link
         results_url = await page.evaluate("""
             () => {
@@ -779,17 +830,17 @@ class OmniPongScraper:
                 return valid ? valid.href : null;
             }
         """)
-        
+
         if results_url:
             print(f"Found Results link: {results_url}")
             await page.goto(results_url)
             await page.wait_for_load_state("domcontentloaded")
-            
+
             # TODO: Add specific result table scraping if needed
             # For now, we assume Entries list is the best source for 'Pre-Tournament Official Ratings'
             # Results pages often show rating CHANGE which is also good, but structure is complex (draws).
-            return [] 
-        
+            return []
+
         return []
 
     async def save_tournament_players(self, players_data):
@@ -797,32 +848,37 @@ class OmniPongScraper:
         async with AsyncSessionLocal() as session:
             for data in players_data:
                 from sqlalchemy import select
+
                 # Check if player exists
                 stmt = select(Player).where(Player.name == data["name"])
                 result = await session.execute(stmt)
                 existing = result.scalar_one_or_none()
-                
+
                 if existing:
                     # Update if source is tournament (assumed higher quality)
                     # OR if existing is just from 'family_search' (potentially league rating)
                     # We always update with latest tournament rating
                     existing.rating = data["rating"]
-                    existing.state = data['location'].split(',')[-1].strip() if ',' in data['location'] else existing.state
-                    existing.rating_source = 'tournament_entry'
+                    existing.state = (
+                        data["location"].split(",")[-1].strip()
+                        if "," in data["location"]
+                        else existing.state
+                    )
+                    existing.rating_source = "tournament_entry"
                     existing.last_updated = datetime.utcnow()
                 else:
                     player = Player(
                         name=data["name"],
                         rating=data["rating"],
-                        state=data['location'].split(',')[-1].strip() if ',' in data['location'] else "",
-                        rating_source='tournament_entry'
+                        state=data["location"].split(",")[-1].strip()
+                        if "," in data["location"]
+                        else "",
+                        rating_source="tournament_entry",
                     )
                     session.add(player)
-            
+
             await session.commit()
             print("Tournament Players synced.")
-
-
 
     async def scrape_my_tournament_history(self):
         """
@@ -832,119 +888,10 @@ class OmniPongScraper:
         print("Scraping My Tournament History...")
         await page.goto("https://www.omnipong.com/Members.asp?s=2")
         await page.wait_for_load_state("domcontentloaded")
-        
+
         activities = await self._extract_tournament_list_from_table(page)
         print(f"Found {len(activities)} tournaments in history.")
         return activities
-
-    async def signup_for_tournament(self, tournament_title: str, recommended_events: list[str]):
-        """
-        Automated signup flow:
-        1. Login and go to Tournaments list.
-        2. Find Texas section and the specific tournament.
-        3. Click 'Enter'.
-        4. Click 'I Accept' on terms.
-        5. Click 'Enter' for each recommended event.
-        """
-        page = await self.browser_manager.get_page()
-        
-        # 1. Login handled by browser manager
-        print("Logging in to OmniPong...")
-        await self.browser_manager.login_omnipong()
-        
-        # 2. Go to Tournaments page (e=0)
-        print("Navigating to Tournament list...")
-        await page.goto("https://www.omnipong.com/t-tourney.asp?e=0")
-        await page.wait_for_load_state("networkidle")
-        
-        # 3. Find Tournament and click 'Enter'
-        print(f"Searching for 'Enter' button for: {tournament_title}")
-        
-        # Use XPath to find the row with tournament title and the 'Enter' button in it.
-        # Note: Tournament title in list might be truncated or slightly different, but contains title.
-        enter_btn_found = await page.evaluate(f"""
-            () => {{
-                const targetTitle = "{tournament_title}".toLowerCase();
-                const rows = Array.from(document.querySelectorAll('tr'));
-                for (const row of rows) {{
-                    const text = row.innerText.toLowerCase();
-                    if (text.includes(targetTitle) && text.includes('texas')) {{
-                        const enterBtn = row.querySelector('input[value="Enter"], button:has-text("Enter")');
-                        if (enterBtn) {{
-                            enterBtn.click();
-                            return true;
-                        }}
-                    }}
-                }}
-                return false;
-            }}
-        """)
-        
-        if not enter_btn_found:
-            # Fallback: Scroll and try again? Or search for exact title match in links
-            print(f"Could not find tournament '{tournament_title}' in Texas section via direct row search. Trying link search...")
-            await page.evaluate(f"""
-                () => {{
-                    const links = Array.from(document.querySelectorAll('a'));
-                    const targetTitle = "{tournament_title}".toLowerCase();
-                    const tourneyLink = links.find(l => l.innerText.toLowerCase().includes(targetTitle));
-                    if (tourneyLink) {{
-                         const row = tourneyLink.closest('tr');
-                         const enterBtn = row.querySelector('input[value="Enter"]');
-                         if (enterBtn) enterBtn.click();
-                    }}
-                }}
-            """)
-        
-        # 4. Wait for 'I Accept' page
-        print("Waiting for 'I Accept' page...")
-        try:
-            accept_btn = await page.wait_for_selector('input[value="I Accept"]', timeout=10000)
-            if accept_btn:
-                print("Clicking 'I Accept'...")
-                await accept_btn.click()
-                await page.wait_for_load_state("networkidle")
-        except Exception as e:
-            print(f"Error finding 'I Accept' button (maybe already entered?): {e}")
-            # Check if we are already on events page
-            if not await page.query_selector('text="Please select the events you wish to play"'):
-                return {"status": "error", "message": "Failed to reach signup confirmation page."}
-
-        # 5. Select Events
-        print(f"Selecting events: {recommended_events}")
-        results = []
-        for event_name in recommended_events:
-            print(f"Attempting to enter event: {event_name}")
-            entered = await page.evaluate(f"""
-                () => {{
-                    const targetEvent = "{event_name}".toLowerCase();
-                    const rows = Array.from(document.querySelectorAll('tr'));
-                    for (const row of rows) {{
-                        if (row.innerText.toLowerCase().includes(targetEvent)) {{
-                            const btn = row.querySelector('input[value="Enter"]');
-                            if (btn) {{
-                                btn.click();
-                                return true;
-                            }}
-                        }}
-                    }}
-                    return false;
-                }}
-            """)
-            if entered:
-                print(f"Successfully clicked 'Enter' for {event_name}")
-                results.append(event_name)
-                # Small wait for action to process if page reloads or updating state
-                await asyncio.sleep(2)
-            else:
-                print(f"Could not find 'Enter' button for {event_name} (already full or ineligible?)")
-
-        return {
-            "status": "success",
-            "tournament": tournament_title,
-            "entered_events": results,
-            "message": f"Signed up for {len(results)} events in {tournament_title}"
-        }
 
     async def scrape_regional_tournaments(self):
         """
@@ -956,7 +903,7 @@ class OmniPongScraper:
         print(f"Scraping Regional Tournaments from {url}...")
         await page.goto(url)
         await page.wait_for_load_state("domcontentloaded")
-        
+
         activities = await self._extract_tournament_list_from_table(page)
         print(f"Found {len(activities)} tournaments in region.")
         return activities
@@ -964,71 +911,65 @@ class OmniPongScraper:
     async def _extract_tournament_list_from_table(self, page):
         """
         Helper to extract tournament links/dates from a standard list table.
-        Modified to handle both <a> links and <input onclick=open_window(...)> buttons.
+        Robustly handles different table structures and deduplicates results.
         """
         return await page.evaluate("""
             () => {
-                const results = [];
-                const rows = Array.from(document.querySelectorAll('table tr'));
+                const tournaments = [];
+                // Search for all rows in the document to be safe
+                const rows = Array.from(document.querySelectorAll('tr'));
                 
-                for (const row of rows) {
-                    let sourceId = null;
-                    let title = "Unknown Tournament";
+                rows.forEach(row => {
+                    // Look for the "Enter" button which uniquely identifies an enterable tournament
+                    const actionBtn = row.querySelector('input.omnipong_green[title="Click to enter this event"]');
+                    if (!actionBtn) return;
                     
-                    // 1. Try to find direct <a> link with t-tourney (Old style)
-                    const links = Array.from(row.querySelectorAll('a'));
-                    const tLink = links.find(l => l.href.includes('t-tourney.asp?t=') && !l.href.endsWith('.pdf'));
+                    const cells = Array.from(row.querySelectorAll('td'));
+                    if (cells.length < 5) return;
                     
-                    if (tLink) {
-                         sourceId = tLink.href;
-                         title = tLink.innerText.trim();
+                    // Most tables have Action at 0, List at 1, Name at 2, City at 3, Date at 4
+                    const nameCell = cells[2];
+                    const cityCell = cells[3];
+                    const dateCell = cells[4];
+                    
+                    const title = nameCell.innerText.trim();
+                    let cityState = cityCell.innerText.trim();
+                    const dateRange = dateCell.innerText.trim();
+                    
+                    // Logic for City/State formatting (especially for Region 8/Texas table)
+                    if (cityState && !cityState.includes(',') && !cityState.toLowerCase().includes('tx')) {
+                        cityState += ', TX';
                     }
                     
-                    // 2. If no direct link, look for "Players" or "Results" button (onclick)
+                    let sourceId = "";
+                    const onclickAttr = actionBtn.getAttribute('onclick');
+                    if (onclickAttr) {
+                        const match = onclickAttr.match(/['"](.*?)['"]/);
+                        if (match) sourceId = new URL(match[1], window.location.href).href;
+                    }
+                    
                     if (!sourceId) {
-                        const inputs = Array.from(row.querySelectorAll('input[type="submit"]'));
-                        // prioritized: Players (t=100) -> Results (t=103) -> Enter (?)
-                        const playersBtn = inputs.find(i => i.value === 'Players');
-                        const resultsBtn = inputs.find(i => i.value === 'Results');
-                        
-                        const targetBtn = playersBtn || resultsBtn;
-                        
-                        if (targetBtn) {
-                            // extract url from onclick="open_window('URL',...)"
-                            const onClick = targetBtn.getAttribute('onclick');
-                            if (onClick) {
-                                const match = onClick.match(/open_window\\('([^']+)'/);
-                                if (match && match[1]) {
-                                    sourceId = "https://www.omnipong.com/" + match[1];
-                                }
-                            }
-                        }
-                        
-                        // Get title from the PDF link usually in the Name col
-                        const nameLink = links.find(l => l.innerText.length > 5); // Simple heuristic
-                        if (nameLink) {
-                            title = nameLink.innerText.trim();
-                        }
+                        const titleLink = nameCell.querySelector('a');
+                        if (titleLink) sourceId = titleLink.href;
                     }
 
-                    if (sourceId) {
-                    // Try to find date in row (MM/DD/YY or MM/DD/YYYY)
-                    const dateText = row.innerText.match(/\d{1,2}\/\d{1,2}\/\d{2,4}/);
-                    const dateStr = dateText ? dateText[0] : null;
-                        
-                        // Location is usually in the 4th cell (index 3)
-                        const cells = Array.from(row.cells);
-                        const location = cells.length >= 4 ? cells[3].innerText.trim() : null;
-                        
-                        results.push({
+                    if (title && sourceId) {
+                        tournaments.push({
                             title: title,
                             source_id: sourceId,
-                            date_str: dateStr,
-                            location: location
+                            date_str: dateRange, // standardizing date field name for python compat
+                            location: cityState
                         });
                     }
-                }
-                return results;
+                });
+                
+                // Deduplicate by source_id
+                const seen = new Set();
+                return tournaments.filter(t => {
+                    if (seen.has(t.source_id)) return false;
+                    seen.add(t.source_id);
+                    return true;
+                });
             }
         """)
 
@@ -1037,98 +978,139 @@ class OmniPongScraper:
         Orchestrator: Checks DB, decides whether to scrape, and saves.
         """
         print(f"Starting Bulk Sync for {len(activities_list)} tournaments...")
-        
+
         async with AsyncSessionLocal() as session:
             from sqlalchemy import select
-            
+
             for act in activities_list:
                 # Standardize source_id
-                # Ensure we store relative or absolute consistently? 
+                # Ensure we store relative or absolute consistently?
                 # Scraper uses full URL usually. Let's stick to full URL or whatever matches.
                 # Only keep the t= part unique? No, source_id is better unique.
-                
+
                 # Check DB
-                stmt = select(Activity).where(Activity.source_id == act['source_id'])
+                stmt = select(Activity).where(Activity.source_id == act["source_id"])
                 result = await session.execute(stmt)
                 existing = result.scalar_one_or_none()
-                
+
                 should_scrape = False
-                
+
                 if not existing:
                     print(f"[NEW] {act['title']} - Scraping...")
                     should_scrape = True
                     # Create placeholder activity
                     try:
-                    # Try MM/DD/YYYY first, then MM/DD/YY
-                        if act['date_str']:
+                        # Try MM/DD/YYYY first, then MM/DD/YY
+                        if act["date_str"]:
                             try:
-                                dt = datetime.strptime(act['date_str'], "%m/%d/%Y").date()
+                                dt = datetime.strptime(
+                                    act["date_str"], "%m/%d/%Y"
+                                ).date()
                             except ValueError:
                                 # Try 2-digit year format
-                                dt = datetime.strptime(act['date_str'], "%m/%d/%y").date()
+                                dt = datetime.strptime(
+                                    act["date_str"], "%m/%d/%y"
+                                ).date()
                         else:
                             dt = None
-                    except: 
+                    except:
                         dt = None
-                    
+
+                    # Convert date to date_range format for CalendarView (MM/DD/YY)
+                    date_range = None
+                    if dt:
+                        date_range = dt.strftime("%m/%d/%y")
+
                     new_act = Activity(
                         source="omnipong",
-                        source_id=act['source_id'],
-                        title=act['title'],
-                        activity_type='tournament',
+                        source_id=act["source_id"],
+                        title=act["title"],
+                        activity_type="tournament",
                         date=dt,
-                        location=act.get('location'),
-                        status='upcoming',
-                        last_scraped=datetime.utcnow()
+                        date_range=date_range,
+                        location=act.get("location"),
+                        status="upcoming",
+                        last_scraped=datetime.utcnow(),
                     )
                     session.add(new_act)
-                    await session.flush() # get ID
+                    await session.flush()  # get ID
                     existing = new_act
                 else:
                     # Smart Sync Check
                     if not existing.status:
-                        existing.status = 'upcoming'
-                    if not existing.location and act.get('location'):
-                        existing.location = act['location']
-                    
-                    time_since_scrape = (datetime.utcnow() - existing.last_scraped).total_seconds() / 3600.0 if existing.last_scraped else 9999
-                    
+                        existing.status = "upcoming"
+                    if not existing.location and act.get("location"):
+                        existing.location = act["location"]
+
+                    # Update date and date_range if date_str is available
+                    if act.get("date_str"):
+                        try:
+                            # Try MM/DD/YYYY first, then MM/DD/YY
+                            try:
+                                dt = datetime.strptime(
+                                    act["date_str"], "%m/%d/%Y"
+                                ).date()
+                            except ValueError:
+                                # Try 2-digit year format
+                                dt = datetime.strptime(
+                                    act["date_str"], "%m/%d/%y"
+                                ).date()
+
+                            existing.date = dt
+
+                            # Convert date to date_range format for CalendarView (MM/DD/YY)
+                            existing.date_range = dt.strftime("%m/%d/%y")
+                        except:
+                            pass  # Keep existing date if parsing fails
+
+                    time_since_scrape = (
+                        (datetime.utcnow() - existing.last_scraped).total_seconds()
+                        / 3600.0
+                        if existing.last_scraped
+                        else 9999
+                    )
+
                     is_past = False
                     if existing.date and existing.date < datetime.utcnow().date():
                         # buffer of 7 days for late results
                         if (datetime.utcnow().date() - existing.date).days > 7:
                             is_past = True
-                    
+
                     if is_past:
                         print(f"[SKIP] {act['title']} (Past & Scraped)")
                         should_scrape = False
                     elif time_since_scrape < 12:
-                        print(f"[SKIP] {act['title']} (Functionally fresh, {time_since_scrape:.1f}h ago)")
+                        print(
+                            f"[SKIP] {act['title']} (Functionally fresh, {time_since_scrape:.1f}h ago)"
+                        )
                         should_scrape = False
                     else:
                         print(f"[UPDATE] {act['title']} (Refreshing...)")
                         should_scrape = True
-                
+
                 if should_scrape:
                     try:
                         # Standardize source_id for event scraping
-                        clean_sid = act['source_id']
-                        if 'omnipong.com/' in clean_sid:
-                            clean_sid = clean_sid.split('omnipong.com/')[-1]
-                        if clean_sid.startswith('/'):
+                        clean_sid = act["source_id"]
+                        if "omnipong.com/" in clean_sid:
+                            clean_sid = clean_sid.split("omnipong.com/")[-1]
+                        if clean_sid.startswith("/"):
                             clean_sid = clean_sid[1:]
 
                         # 1. Scrape Players
-                        players = await self.scrape_tournament_entries(act['source_id'])
+                        players = await self.scrape_tournament_entries(act["source_id"])
                         if players:
                             await self.save_tournament_players(players)
-                        
+
                         # 2. Scrape Events [NEW]
                         events = await self.scrape_activity_events(clean_sid)
                         if events:
                             from models import Event
+
                             # Clear old events
-                            await session.execute(delete(Event).where(Event.activity_id == existing.id))
+                            await session.execute(
+                                delete(Event).where(Event.activity_id == existing.id)
+                            )
                             for evt_data in events:
                                 evt = Event(**evt_data)
                                 evt.activity_id = existing.id
@@ -1137,13 +1119,283 @@ class OmniPongScraper:
                         # Update last_scraped
                         existing.last_scraped = datetime.utcnow()
                         await session.commit()
-                        
+
                         # Be nice to the server
-                        await asyncio.sleep(2) 
+                        await asyncio.sleep(2)
                     except Exception as e:
                         print(f"Failed to scrape {act['title']}: {e}")
-                        
+
         print("Bulk Sync Complete.")
+
+    async def signup_for_tournament(self, tournament_title, recommended_events=None):
+        """
+        Automates the process of signing up for a tournament.
+        Uses Smart Matching if recommended_events is not provided.
+        """
+        # Ensure browser is initialized
+        if not self.browser_manager.context:
+            await self.browser_manager.start()
+
+        # Get context
+        context = self.browser_manager.context
+        if not context:
+            return {
+                "status": "error",
+                "message": "Failed to initialize browser context.",
+            }
+
+        page = await context.new_page()
+
+        try:
+            # 1. Login if needed (handled by browser_manager usually, but explicit check good)
+            # Pass the page object to login to reuse it
+            await self.browser_manager.login_omnipong()
+
+            # 2. Go to Tournament List (Region 8 default for now)
+            await page.goto(
+                "https://www.omnipong.com/T-tourney.asp?t=8&Region=8&y=&k=&e=0"
+            )
+
+            # 3. Find Tournament and Click "Enter"
+            # We need to find the specific row.
+            found = await page.evaluate(
+                f"""
+                (title) => {{
+                    const rows = Array.from(document.querySelectorAll('tr'));
+                    for (const row of rows) {{
+                        if (row.innerText.includes(title)) {{
+                            const enterBtn = row.querySelector('input[value="Enter"][onclick*="Members.asp"]');
+                            if (enterBtn) {{
+                                enterBtn.click();
+                                return true;
+                            }}
+                            // Also check for "action" column style
+                            const actionBtn = row.querySelector('input.omnipong_green[title="Click to enter this event"]');
+                            if (actionBtn) {{
+                                actionBtn.click();
+                                return true;
+                            }}
+                        }}
+                    }}
+                    return false;
+                }}
+            """,
+                tournament_title,
+            )
+
+            if not found:
+                return {
+                    "status": "error",
+                    "message": f"Tournament '{tournament_title}' not found or not enterable.",
+                }
+
+            # Wait for navigation to complete
+            await page.wait_for_load_state("domcontentloaded")
+            await asyncio.sleep(2)  # Stability wait for redirects
+
+            # 4. Handle Waiver
+            try:
+                content = await page.content()
+                if "I Accept" in content:
+                    await page.click("input[value='I Accept']")
+                    await page.wait_for_load_state("domcontentloaded")
+                    await asyncio.sleep(1)
+            except Exception as e:
+                print(f"Waiver check warning: {e}")
+
+            # Check for Player Summary redirection (already entered but no events, or re-entering)
+            try:
+                content = await page.content()
+                if "Player Summary" in content:
+                    print("DEBUG: Redirected to Player Summary. Clicking 'Events'...")
+                    # Click "Events" button
+                    await page.click("input[value='Events']")
+                    await page.wait_for_load_state("domcontentloaded")
+                    await asyncio.sleep(2)
+            except Exception as e:
+                print(f"Summary redirection check warning: {e}")
+
+            # 5. Parse Available Events
+            available_events = await self._parse_entry_page(page)
+            print(
+                f"DEBUG: Found {len(available_events)} events: {[e['name'] for e in available_events]}"
+            )
+
+            # 6. Smart Match Events (if not provided)
+            target_events = recommended_events
+            if not target_events:
+                # Need user rating. TODO: Pass in or fetch.
+                # For now using 1500 default or pass it in.
+                user_rating = 1500
+                matcher = SmartEventMatcher(user_rating)
+                target_events = matcher.match(available_events)
+
+            results = []
+
+            # 7. Enter Events Loop
+            count = 0
+            for event_name in target_events:
+                # Re-parse page to get fresh element handles
+                current_events = await self._parse_entry_page(page)
+
+                # Find event object
+                event_obj = next(
+                    (e for e in current_events if e["name"] == event_name), None
+                )
+
+                if event_obj and event_obj.get("is_enterable"):
+                    # Execute JavaScript click to be robust
+                    clicked = await page.evaluate(
+                        f"""
+                        (eventName) => {{
+                             const rows = Array.from(document.querySelectorAll('tr'));
+                             for (const row of rows) {{
+                                 if (row.innerText.includes(eventName)) {{
+                                     const btn = row.querySelector('input[value="Enter"]');
+                                     if (btn) {{
+                                         btn.click();
+                                         return true;
+                                     }}
+                                 }}
+                             }}
+                             return false;
+                        }}
+                    """,
+                        event_name,
+                    )
+
+                    if clicked:
+                        await page.wait_for_load_state("domcontentloaded")
+                        await asyncio.sleep(2)  # Stability wait
+                        results.append(f"Entered: {event_name}")
+                        count += 1
+
+                        # Handle redirection to Summary Page -> "Enter More Events"
+                        try:
+                            content = await page.content()
+                            if "Player Summary" in content or "Payment" in content:
+                                back_btn = await page.query_selector(
+                                    "input[value*='Enter']"
+                                )  # 'Enter events' or similar
+                                if back_btn:
+                                    await back_btn.click()
+                                    await page.wait_for_load_state("domcontentloaded")
+                                    await asyncio.sleep(2)
+                        except Exception as e:
+                            print(f"Loop redirection error: {e}")
+                    else:
+                        results.append(f"Failed to click: {event_name}")
+                else:
+                    results.append(f"Skipped (Not found/Eligible): {event_name}")
+
+            return {
+                "status": "success",
+                "message": f"Signed up for {count} events",
+                "details": results,
+                "events_selected": target_events,
+            }
+
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+        finally:
+            await page.close()
+
+    async def _parse_entry_page(self, page):
+        """Helpers to extract event data from the entry table"""
+        return await page.evaluate("""
+            () => {
+                const events = [];
+                // Find all Enter buttons, which are the anchors for enterable events
+                const enterBtns = Array.from(document.querySelectorAll('input[type="Submit"][value="Enter"]'));
+                
+                for (const btn of enterBtns) {
+                    // Traverse up to TR
+                    let row = btn.parentElement;
+                    while (row && row.tagName !== 'TR') {
+                        row = row.parentElement;
+                    }
+                    
+                    if (row) {
+                         const cells = row.cells;
+                         if (cells.length >= 7) {
+                             // Assuming standard layout: #, Action, Event Name, Rating, Day, Time, Format, Fee
+                             // Index 2 is Event Name usually
+                             const nameCell = cells[2];
+                             if (nameCell) {
+                                 let name = nameCell.innerText.trim();
+                                 // Clean up " : 42 slots left" suffix
+                                 if (name.includes(':')) {
+                                     name = name.split(':')[0].trim();
+                                 }
+                                 
+                                 events.push({
+                                     name: name,
+                                     full_text: nameCell.innerText.trim(),
+                                     is_enterable: true
+                                 });
+                             }
+                         }
+                    }
+                }
+                return events;
+            }
+        """)
+
+
+class SmartEventMatcher:
+    def __init__(self, user_rating):
+        self.rating = user_rating
+
+    def match(self, available_events):
+        """
+        Selects optimal events:
+        1. Open Singles (Always)
+        2. Next 2 Rating Brackets above user rating
+        """
+        selected = []
+
+        # 1. Open / Championship
+        open_event = next(
+            (
+                e["name"]
+                for e in available_events
+                if "Open" in e["name"] or "Championship" in e["name"]
+            ),
+            None,
+        )
+        if open_event:
+            selected.append(open_event)
+
+        # 2. Rating Events (Under XXXX)
+        rating_events = []
+        import re
+
+        for e in available_events:
+            name = e["name"]
+            # Match "Under 2000" or "U2000" or "U-2000"
+            m = re.search(r"(?:Under|U)\s*-?\s*(\d{3,4})", name, re.IGNORECASE)
+            if m:
+                cap = int(m.group(1))
+                if cap > self.rating:
+                    rating_events.append((cap, name))
+
+        # Sort by rating cap (lowest first -> closest to user)
+        rating_events.sort(key=lambda x: x[0])
+
+        # Take up to 2 closest brackets
+        for _, name in rating_events[:2]:
+            selected.append(name)
+
+        # Dedupe while preserving order
+        final_list = []
+        seen = set()
+        for s in selected:
+            if s not in seen:
+                final_list.append(s)
+                seen.add(s)
+
+        return final_list
+
 
 async def test_scraper():
     print("Starting OmniPong Scraper Test...")
@@ -1153,20 +1405,22 @@ async def test_scraper():
     try:
         await manager.login_omnipong()
         print("Logged in.")
-        
+
         # Run specific rating history scrape
         await scraper.scrape_rating_history()
-        
+
         print("Scraping Matches to check for rating columns...")
         await scraper.scrape_my_matches()
-        
+
     except Exception as e:
         print(f"FATAL ERROR: {e}")
         import traceback
+
         traceback.print_exc()
     finally:
         await manager.stop()
         print("Scraper test complete.")
+
 
 if __name__ == "__main__":
     asyncio.run(test_scraper())

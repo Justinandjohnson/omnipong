@@ -15,3 +15,8 @@ python-multipart>=0.0.6
 openai>=1.0.0
 twilio>=8.0.0
 anthropic>=0.3.0
+
+# Agent Platform (rubberr/backend/browser_agent.py, main.py) — Tier-1/Tier-3
+# relay + browser-agent bridge. See docs/RELAY_ARCHITECTURE.md.
+httpx>=0.27.0
+browser-use==0.13.6
