@@ -7,6 +7,7 @@ import TournamentCard from "@/components/TournamentCard";
 import RubberrStats from "@/components/RubberrStats";
 import { useEffect, useState } from "react";
 import { AlertCircle, LocateFixed } from "lucide-react";
+import { fetchOmnipongEvents } from "@/lib/omnipongApi";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -203,11 +204,11 @@ export default function Home() {
   // 2. Fetch Tournaments (with cache, demo fallback)
   const fetchTournaments = async (stateFilter?: string) => {
     try {
-      let url = `${API_URL}/tournaments`;
-      if (stateFilter) url += `?state=${stateFilter}`;
-
-      const res = await fetch(url);
-      const data = await res.json();
+      // Calendar data now comes from the omnipong REST API (/events).
+      const data = await fetchOmnipongEvents({
+        eventType: "tournaments",
+        state: stateFilter,
+      });
       if (!data || data.length === 0) throw new Error("empty");
       setAllTournaments(data);
       setTournaments(data.slice(0, 3));
@@ -447,8 +448,9 @@ export default function Home() {
                              userRating={user?.rating || 1500}
                              onToggleRegion={async (isInternational) => {
                                  try {
-                                     const res = await fetch(`${API_URL}/tournaments?region=${isInternational ? 'international' : 'local'}`);
-                                     const data = await res.json();
+                                     const data = await fetchOmnipongEvents({
+                                         eventType: isInternational ? 'international' : 'tournaments',
+                                     });
                                      setAllTournaments(data);
                                      setTournaments(data.slice(0, 3));
                                      setCachedData('tournaments', data);
