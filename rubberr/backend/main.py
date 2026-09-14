@@ -28,7 +28,7 @@ from browser_manager import BrowserManager
 
 # Import shared utilities
 from .tournament_intelligence import get_tournament_intelligence
-from models import Activity, Event, Notification, Base
+from models import Base
 
 
 # Initialize models
@@ -1106,7 +1106,7 @@ def get_stats(source: str = "omnipong"):
                         elif won_first_set and not is_win:
                             chokes += 1
 
-                except Exception as ex:
+                except Exception:
                     # print(f"Error parsing sets: {ex}")
                     pass
 
@@ -1224,7 +1224,7 @@ async def tool_sync_tournaments(scope: str = "regional"):
     scopes: 'history' (my history), 'regional' (Region 8), 'all'
     """
     print(f"\n{'=' * 60}")
-    print(f"🎾 [BACKEND] Tournament sync endpoint called")
+    print("🎾 [BACKEND] Tournament sync endpoint called")
     print(f"🎾 [BACKEND] Scope parameter: {scope}")
     print(f"{'=' * 60}\n")
 
@@ -1248,14 +1248,14 @@ async def tool_sync_tournaments(scope: str = "regional"):
             print(f"🎾 [BACKEND] Script stderr:\n{stderr.decode()}")
 
         if code == 0:
-            print(f"🎾 [BACKEND] Returning SUCCESS response")
+            print("🎾 [BACKEND] Returning SUCCESS response")
             return {
                 "status": "success",
                 "message": f"Tournament sync ({scope}) complete",
                 "output": stdout.decode(),
             }
         else:
-            print(f"🎾 [BACKEND] Returning ERROR response")
+            print("🎾 [BACKEND] Returning ERROR response")
             return {"status": "error", "message": f"Sync failed: {stderr.decode()}"}
     except Exception as e:
         print(f"🎾 [BACKEND] Exception caught: {type(e).__name__}: {str(e)}")
@@ -1362,7 +1362,7 @@ def tool_search_players(req: PlayerSearch):
 def save_arcade_match(
     session, opponent_name, result, score_summary, set_scores, date_obj=None
 ):
-    from models import Match, Player
+    from models import Match
     from datetime import datetime
 
     # 1. Find/Create Opponent
@@ -1391,7 +1391,7 @@ def save_arcade_match(
 
 # --- MULTI-MODAL & AI HANDLERS ---
 from .ai_handler import transcribe_audio, parse_match_intent
-from fastapi import File, UploadFile, Form, Request, Response
+from fastapi import File, UploadFile, Request, Response
 import shutil
 import os
 
@@ -1580,7 +1580,6 @@ async def arcade_submit_score(data: ArcadeScoreSubmission):
     """
     session = SessionLocal()
     try:
-        from datetime import date
 
         # 1. Smarter AI Parsing
         # Use the same logic as the Twilio agent if transcript is provided
@@ -1612,7 +1611,7 @@ async def arcade_submit_score(data: ArcadeScoreSubmission):
                 }
 
         # 2. Save Match to DB
-        from models import Match, Player
+        from models import Match
 
         # Support both old and new field names - fully dynamic, no hardcoded names
         user_name = data.player1_name or "User"  # Default to generic if not provided
@@ -1815,7 +1814,7 @@ def get_practice_partners(limit: int = 5):
 
             # 5. Recent Activity (prefer players you can still practice with)
             try:
-                from datetime import datetime, timedelta
+                from datetime import datetime
 
                 last_played = datetime.strptime(str(stats["last_played"]), "%Y-%m-%d")
                 days_since = (datetime.now() - last_played).days
@@ -2095,13 +2094,19 @@ async def get_claude_response(user_message: str, user_key: str = None):
     Used by /chat endpoint AND SMS webhook.
     user_key: caller's own Anthropic key (BYOK); if absent falls back to server key.
     """
-    if user_key:
-        client = anthropic.Anthropic(api_key=user_key)
-    else:
-        client = get_anthropic_client()
+    # Resolve the effective key: BYOK header wins, then OpenRouter, then Anthropic.
+    key = user_key or os.getenv("OPENROUTER_API_KEY") or os.getenv("ANTHROPIC_API_KEY")
+    if not key:
+        raise ValueError("No AI key: set OPENROUTER_API_KEY / ANTHROPIC_API_KEY or send X-User-Api-Key")
 
-    # Use the model that we verified works (reverting to original)
-    model = "claude-sonnet-4-5"
+    if key.startswith("sk-or-"):
+        # OpenRouter key → OpenRouter's Anthropic-compatible Messages endpoint
+        # (verified: POST https://openrouter.ai/api/v1/messages returns 200).
+        client = anthropic.Anthropic(api_key=key, base_url="https://openrouter.ai/api")
+        model = "anthropic/claude-sonnet-4.5"
+    else:
+        client = anthropic.Anthropic(api_key=key)
+        model = "claude-sonnet-4-5"
 
     messages = [{"role": "user", "content": user_message}]
 
@@ -2404,7 +2409,7 @@ async def get_player_scouting(player_name: str, _: None = Depends(_require_api_k
 
 
 @app.get("/training/recommendations")
-async def get_training_recommendations():
+async def get_training_recommendations(request: Request):
     """
     Analyze global match history to suggest training focus areas and drills.
     """
@@ -2480,7 +2485,7 @@ async def get_training_recommendations():
         4. Keep it short, authoritative, and impactful.
         """
 
-        advice = await get_claude_response(prompt)
+        advice = await get_claude_response(prompt, user_key=_get_user_ai_key(request))
 
         return {
             "total_matches": total,

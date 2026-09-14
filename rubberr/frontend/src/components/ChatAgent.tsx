@@ -2,6 +2,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { MessageSquare, X, Send, Loader2, Mic } from 'lucide-react';
+import { getAIHeaders } from './DemoBar';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -39,21 +40,26 @@ export default function ChatAgent({ onSwitchToVoice }: ChatAgentProps) {
       // Call the backend chat endpoint with full tool access
       const response = await fetch(`${API_URL}/chat`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...getAIHeaders() },
         body: JSON.stringify({ message: userMessage })
       });
       
       if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
+        let detail = `HTTP ${response.status}`;
+        try {
+          const errBody = await response.json();
+          if (errBody?.detail) detail = errBody.detail;
+        } catch {}
+        throw new Error(detail);
       }
-      
+
       const data = await response.json();
       setMessages(prev => [...prev, { role: 'agent', content: data.response }]);
     } catch (error) {
       console.error('Chat error:', error);
-      setMessages(prev => [...prev, { 
-        role: 'agent', 
-        content: "Sorry, I couldn't connect to the backend. Please make sure the server is running on port 8000." 
+      setMessages(prev => [...prev, {
+        role: 'agent',
+        content: `Chat failed: ${error instanceof Error ? error.message : String(error)}`
       }]);
     } finally {
       setIsLoading(false);

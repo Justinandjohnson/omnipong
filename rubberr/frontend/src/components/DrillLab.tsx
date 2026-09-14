@@ -1,20 +1,27 @@
 import { Zap, Target, TrendingDown, BookOpen, RefreshCw } from 'lucide-react';
 import { useState, useEffect } from 'react';
+import { getAIHeaders } from './DemoBar';
 
 export default function DrillLab() {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const fetchRecommendations = () => {
     setLoading(true);
-    fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/training/recommendations`)
-      .then(res => res.json())
+    setError(null);
+    const endpoint = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/training/recommendations`;
+    fetch(endpoint, { headers: getAIHeaders() })
+      .then(res => {
+        if (!res.ok) throw new Error(`GET /training/recommendations → ${res.status}`);
+        return res.json();
+      })
       .then(json => {
         setData(json);
         setLoading(false);
       })
       .catch(err => {
-        console.error("Training Recommendations Error:", err);
+        setError(`Couldn't load training recommendations from ${endpoint}: ${err instanceof Error ? err.message : String(err)}`);
         setLoading(false);
       });
   };
@@ -35,8 +42,28 @@ export default function DrillLab() {
     );
   }
 
-  if (!data || data.status === 'error') {
-     return null; // Don't show if error
+  if (error) {
+    return (
+      <div className="bg-[#1a1a1a] rounded-2xl border border-red-500/40 p-6 h-full text-sm text-red-300">
+        {error}
+      </div>
+    );
+  }
+
+  if (data && data.status === 'error') {
+     return (
+       <div className="bg-[#1a1a1a] rounded-2xl border border-red-500/40 p-6 h-full text-sm text-red-300">
+         Training recommendations failed: {data.message || 'unknown error'}
+       </div>
+     );
+  }
+
+  if (!data) {
+     return (
+       <div className="bg-[#1a1a1a] rounded-2xl border border-[#333] p-6 h-full text-sm text-gray-400">
+         No training recommendations yet — sync your match history to populate this.
+       </div>
+     );
   }
 
   return (
