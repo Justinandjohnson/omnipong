@@ -68,6 +68,8 @@ type Recommendation = {
   tournament: string;
   recommended_events?: RecommendedEvent[];
   difficulty_score?: number;
+  recommended?: boolean;
+  expected_rating_change?: number;
   doubles_partner_suggestions?: { name: string; rating?: number | string }[];
   known_players_likely_attending?: { name: string; your_record?: string }[];
 };
@@ -148,13 +150,22 @@ export default function TournamentsPage() {
   // Ask the backend to look for new tournaments. Runs in the background; the
   // DB is the source of truth so we just refetch when it returns.
   const runCheck = useCallback(
-    async (showSpinner: boolean) => {
+    async (showSpinner: boolean, deep = false) => {
       if (showSpinner) setRefreshing(true);
       try {
-        const res = await fetch(`${API_URL}/tools/check-tournaments`, { method: "POST" });
+        // A manual Refresh deep-scans events for area tournaments so the map
+        // popups can show the recommended events; the lightweight auto-check
+        // on open only looks for brand-new tournaments.
+        const res = deep
+          ? await fetch(`${API_URL}/agent/action`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ action: "tournaments", params: { deep: true } }),
+            })
+          : await fetch(`${API_URL}/tools/check-tournaments`, { method: "POST" });
         const data = await res.json();
-        if (data?.status === "success" || res.ok) {
-          setNotice("Up to date.");
+        if (data?.status === "success" || data?.status === "ok" || res.ok) {
+          setNotice(deep ? "Tournaments and events updated." : "Up to date.");
         } else {
           setNotice("Check finished with warnings.");
         }
@@ -216,6 +227,13 @@ export default function TournamentsPage() {
     }
   }, [fetchTournaments, fetchInsights, fetchMatches, runCheck]);
 
+  // Allow deep-linking straight into a tab, e.g. /tournaments?view=map.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const v = new URLSearchParams(window.location.search).get("view");
+    if (v === "list" || v === "calendar" || v === "map" || v === "matches") setView(v);
+  }, []);
+
   // Sync just the user's own match history via the agent.
   const syncMatches = useCallback(async () => {
     setMatchesSyncing(true);
@@ -253,6 +271,24 @@ export default function TournamentsPage() {
     [tournaments, search, filter, userState],
   );
 
+  // Merge the AI recommendation into each tournament for the map (marker
+  // color + popup events). The list/calendar already resolve insights per card.
+  const mapTournaments = useMemo(
+    () =>
+      filtered.map((t) => {
+        const ins = getInsightsForTournament(t.title || "");
+        return {
+          ...t,
+          recommended_events: ins?.recommended_events,
+          recommended: ins?.recommended,
+          expected_rating_change: ins?.expected_rating_change,
+        };
+      }),
+    // getInsightsForTournament is derived from aiInsights
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [filtered, aiInsights],
+  );
+
   const TABS: { id: View; label: string; icon: LucideIcon }[] = [
     { id: "list", label: "List", icon: ListIcon },
     { id: "calendar", label: "Calendar", icon: CalendarDays },
@@ -274,7 +310,7 @@ export default function TournamentsPage() {
           <div className="flex items-center gap-3">
             {lastSync && <span className="text-xs text-gray-500">Updated {lastSync}</span>}
             <button
-              onClick={() => runCheck(true)}
+              onClick={() => runCheck(true, true)}
               disabled={refreshing}
               className="px-4 py-2.5 rounded-xl bg-[var(--rubber-red)] text-white font-bold text-sm flex items-center gap-2 hover:bg-red-600 transition-colors disabled:opacity-70"
             >
@@ -385,7 +421,7 @@ export default function TournamentsPage() {
 
         {view === "map" && (
           <div className="h-[75vh]">
-            <MapView tournaments={filtered} userLocation={userLocation} />
+            <MapView tournaments={mapTournaments} userLocation={userLocation} />
           </div>
         )}
 

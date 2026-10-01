@@ -1,7 +1,7 @@
 "use client";
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
-import { Icon, divIcon, latLngBounds } from 'leaflet';
+import { divIcon, latLngBounds } from 'leaflet';
 import { useEffect, useMemo } from 'react';
 import { ExternalLink } from 'lucide-react';
 
@@ -11,12 +11,21 @@ import { ExternalLink } from 'lucide-react';
 const CARTO_KEY = process.env.NEXT_PUBLIC_CARTO_KEY;
 const TILE_URL = `https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png${CARTO_KEY ? `?key=${CARTO_KEY}` : ""}`;
 
-// Fix for default marker icon in Leaflet/Next.js
-const customIcon = new Icon({
-  iconUrl: "https://unpkg.com/leaflet@1.7.1/dist/images/marker-icon.png",
-  iconSize: [25, 41],
-  iconAnchor: [12, 41]
-});
+// Tournament markers: green when the rating engine recommends the tournament,
+// slate otherwise, so "which ones to sign up for" is visible at a glance.
+function tournamentIcon(recommended: boolean) {
+  const color = recommended ? "#22c55e" : "#94a3b8";
+  const ring = recommended ? "box-shadow:0 0 0 4px rgba(34,197,94,.35);" : "";
+  return divIcon({
+    className: "",
+    html: `<div style="width:14px;height:14px;border-radius:50%;background:${color};border:2px solid #fff;${ring}"></div>`,
+    iconSize: [14, 14],
+    iconAnchor: [7, 7],
+    popupAnchor: [0, -8],
+  });
+}
+const recommendedPin = tournamentIcon(true);
+const normalPin = tournamentIcon(false);
 
 // "You are here" marker — a plain CSS dot so no extra asset is needed.
 const userIcon = divIcon({
@@ -110,12 +119,22 @@ function haversineMiles(a: [number, number], b: [number, number]): number {
   return 2 * R * Math.asin(Math.sqrt(s));
 }
 
+interface MapRecEvent {
+  name: string;
+  fee?: number | string | null;
+  competitiveness?: string | null;
+  reason?: string | null;
+}
+
 interface Tournament {
   title?: string;
   city_state?: string;
   location?: string;
   date_range?: string;
   omnipong_url?: string;
+  recommended_events?: MapRecEvent[];
+  recommended?: boolean;
+  expected_rating_change?: number;
 }
 
 interface MapMarker {
@@ -125,6 +144,9 @@ interface MapMarker {
   date?: string;
   location: string;
   url?: string;
+  recommended: boolean;
+  recommendedEvents: MapRecEvent[];
+  expectedChange?: number;
 }
 
 interface MapViewProps {
@@ -163,6 +185,9 @@ export default function MapView({ tournaments, userLocation }: MapViewProps) {
             date: t.date_range,
             location: loc,
             url: t.omnipong_url,
+            recommended: Boolean(t.recommended),
+            recommendedEvents: t.recommended_events || [],
+            expectedChange: t.expected_rating_change,
           };
         })
         .filter((m): m is MapMarker => m !== null),
@@ -201,7 +226,11 @@ export default function MapView({ tournaments, userLocation }: MapViewProps) {
             ? haversineMiles([userLocation.lat, userLocation.lng], [loc.lat, loc.lng])
             : null;
           return (
-            <Marker key={i} position={[loc.lat, loc.lng]} icon={customIcon}>
+            <Marker
+              key={i}
+              position={[loc.lat, loc.lng]}
+              icon={loc.recommended ? recommendedPin : normalPin}
+            >
               <Popup>
                 <div className="text-black font-bold font-sans leading-snug">{loc.name}</div>
                 <div className="text-gray-600 text-xs font-sans font-medium mt-1">
@@ -212,6 +241,38 @@ export default function MapView({ tournaments, userLocation }: MapViewProps) {
                 )}
                 {dist !== null && (
                   <div className="text-gray-500 text-xs font-sans">~{dist.toFixed(0)} mi away</div>
+                )}
+                {loc.recommended && (
+                  <div style={{ marginTop: 6, fontSize: 12, fontWeight: 800, color: "#16a34a" }}>
+                    Good fit
+                    {typeof loc.expectedChange === "number"
+                      ? ` · ${loc.expectedChange > 0 ? "+" : ""}${loc.expectedChange} pts expected`
+                      : ""}
+                  </div>
+                )}
+                {loc.recommendedEvents.length > 0 && (
+                  <div style={{ marginTop: 6 }}>
+                    <div
+                      style={{
+                        fontSize: 10,
+                        textTransform: "uppercase",
+                        letterSpacing: ".06em",
+                        color: "#6b7280",
+                        fontWeight: 800,
+                      }}
+                    >
+                      AI recommends
+                    </div>
+                    {loc.recommendedEvents.map((e, j) => (
+                      <div key={j} style={{ fontSize: 12, color: "#111827", marginTop: 2 }}>
+                        <span style={{ fontWeight: 700 }}>{e.name}</span>
+                        {e.competitiveness ? (
+                          <span style={{ color: "#6b7280" }}> · {e.competitiveness}</span>
+                        ) : null}
+                        {e.fee ? <span style={{ color: "#6b7280" }}> · ${e.fee}</span> : null}
+                      </div>
+                    ))}
+                  </div>
                 )}
                 {loc.url && (
                   <a

@@ -5,7 +5,7 @@
 // six actions the MCP server exposes (omnipong_mcp_server.py). So the app tab
 // and any MCP client drive one code path. See docs/OMNIPONG_AGENT.md.
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   Bot,
   Search,
@@ -15,6 +15,8 @@ import {
   Loader2,
   AlertTriangle,
   Swords,
+  User,
+  MapPin,
 } from "lucide-react";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -72,6 +74,47 @@ export default function AgentConsole() {
   const [title, setTitle] = useState("");
   const [events, setEvents] = useState("");
 
+  // Player identity — who the agent scouts/ranks for.
+  const [playerName, setPlayerName] = useState("");
+  const [playerRating, setPlayerRating] = useState("");
+  const [savingPlayer, setSavingPlayer] = useState(false);
+  const [playerMsg, setPlayerMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch(`${API_URL}/user`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((u) => {
+        if (u?.full_name) setPlayerName(u.full_name);
+        if (u?.rating) setPlayerRating(String(u.rating));
+      })
+      .catch(() => {});
+  }, []);
+
+  async function savePlayer() {
+    setSavingPlayer(true);
+    setPlayerMsg(null);
+    try {
+      const body: { name: string; rating?: number } = { name: playerName.trim() };
+      const r = Number(playerRating);
+      if (playerRating.trim() !== "" && !Number.isNaN(r)) body.rating = r;
+      const res = await fetch(`${API_URL}/settings/player`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (!res.ok || data?.status === "error") {
+        throw new Error(data?.message || `Save failed (HTTP ${res.status})`);
+      }
+      // Jump straight to the map so the recommendations are front and center.
+      window.location.href = "/tournaments?view=map";
+    } catch (e) {
+      setPlayerMsg(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSavingPlayer(false);
+    }
+  }
+
   const active = ACTIONS.find((a) => a.id === action)!;
 
   function buildParams(): Record<string, unknown> {
@@ -118,6 +161,48 @@ export default function AgentConsole() {
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-6">
+      {/* Player identity — who the agent scouts and ranks for */}
+      <div className="lg:col-span-2 rounded-2xl border border-[#2a2a2a] bg-[#141414] p-5">
+        <div className="flex items-center gap-2 mb-3">
+          <User size={18} className="text-[var(--rubber-accent)]" />
+          <h2 className="font-semibold text-white">Player</h2>
+          <span className="text-xs text-gray-500">
+            Who the agent scouts, ranks, and recommends events for
+          </span>
+        </div>
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="flex-1 min-w-[200px]">
+            <label className="block text-xs text-gray-500 mb-1">Name</label>
+            <input
+              className={inputCls}
+              placeholder="e.g. Justin Johnson"
+              value={playerName}
+              onChange={(e) => setPlayerName(e.target.value)}
+            />
+          </div>
+          <div className="w-36">
+            <label className="block text-xs text-gray-500 mb-1">Rating (optional)</label>
+            <input
+              className={inputCls}
+              type="number"
+              placeholder="1500"
+              value={playerRating}
+              onChange={(e) => setPlayerRating(e.target.value)}
+            />
+          </div>
+          <button
+            onClick={savePlayer}
+            disabled={savingPlayer || !playerName.trim()}
+            className="inline-flex items-center gap-2 rounded-lg bg-[var(--rubber-red)] px-4 py-2 text-sm font-medium text-white
+              hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed transition"
+          >
+            {savingPlayer ? <Loader2 size={16} className="animate-spin" /> : <MapPin size={16} />}
+            {savingPlayer ? "Saving…" : "Save & open map"}
+          </button>
+        </div>
+        {playerMsg && <div className="mt-3 text-sm text-red-300">{playerMsg}</div>}
+      </div>
+
       {/* Action picker */}
       <div className="space-y-2">
         {ACTIONS.map((a) => (
