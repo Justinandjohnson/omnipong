@@ -119,19 +119,33 @@ export default function AgentConsole() {
     setSyncing(true);
     setPlayerMsg(null);
     try {
+      // 1) Official rating from USATT (via the relay).
+      let ratingMsg = "USATT rating unavailable.";
+      try {
+        const r = await fetch(`${API_URL}/tools/sync/usatt`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: playerName.trim() || undefined }),
+        });
+        const d = await r.json();
+        if (d?.status === "success") {
+          const rating = d?.player?.rating;
+          if (typeof rating === "number") setPlayerRating(rating);
+          if (d?.player?.usatt_id) setPlayerUsatt(String(d.player.usatt_id));
+          ratingMsg = `USATT rating ${rating}.`;
+        } else {
+          ratingMsg = `USATT: ${d?.message || "unavailable"}.`;
+        }
+      } catch {
+        ratingMsg = "USATT: request failed.";
+      }
+      // 2) OmniPong account number + finished history.
       const res = await fetch(`${API_URL}/tools/sync/account`, { method: "POST" });
       const data = await res.json();
-      if (!res.ok || data?.status === "error") {
-        throw new Error(data?.message || `Sync failed (HTTP ${res.status})`);
-      }
       const no = data?.account_number ?? data?.account?.account_number;
       if (no) setPlayerUsatt(String(no));
       const count = data?.finished_count ?? 0;
-      setPlayerMsg(
-        no
-          ? `Synced account #${no} (${count} finished events).`
-          : "Synced, but no account number was found.",
-      );
+      setPlayerMsg(`${ratingMsg} Account #${no ?? "—"} (${count} finished events).`);
     } catch (e) {
       setPlayerMsg(e instanceof Error ? e.message : String(e));
     } finally {
