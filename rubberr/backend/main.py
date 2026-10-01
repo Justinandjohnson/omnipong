@@ -2558,6 +2558,51 @@ def update_player(data: PlayerSettings):
         session.close()
 
 
+@app.post("/tools/sync/account")
+async def sync_account(_: None = Depends(_require_api_key)):
+    """Read the member's OmniPong account generically and store the account number.
+
+    The scraper returns raw text plus structure-derived fields, panels and
+    history rows, so this endpoint does not depend on the site's exact
+    wording. It persists the account number (the real USATT number) and
+    returns the whole generic payload for the client to display. OmniPong
+    does not publish the member's rating, so the rating is left to the
+    results/relay paths rather than guessed here."""
+    try:
+        from omnipong_scraper import OmniPongScraper
+
+        scraper = OmniPongScraper(browser_manager)
+        account = await scraper.scrape_my_account()
+        acct_no = account.get("account_number")
+        rows = account.get("rows") or []
+        finished_count = sum(1 for r in rows if r.get("has_date"))
+
+        if acct_no:
+            session = SessionLocal()
+            try:
+                session.execute(
+                    text(
+                        "UPDATE users SET usatt_id = :v "
+                        "WHERE id = (SELECT id FROM users LIMIT 1)"
+                    ),
+                    {"v": acct_no},
+                )
+                session.commit()
+            except Exception:
+                session.rollback()
+            finally:
+                session.close()
+
+        return {
+            "status": "success",
+            "account_number": acct_no,
+            "finished_count": finished_count,
+            "account": account,
+        }
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
 @app.get("/players/{player_name}/scouting")
 async def get_player_scouting(player_name: str, _: None = Depends(_require_api_key)):
     """
