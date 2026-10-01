@@ -42,7 +42,7 @@ pid_alive() { [[ -n "${1:-}" ]] && kill -0 "$1" 2>/dev/null; }
 wait_http() {
   local url="$1" tries="${2:-60}"
   for _ in $(seq 1 "$tries"); do
-    if curl -fsS -m 2 -o /dev/null "$url" 2>/dev/null; then return 0; fi
+    if curl -fsS -m 1 -o /dev/null "$url" 2>/dev/null; then return 0; fi
     sleep 0.5
   done
   return 1
@@ -61,6 +61,13 @@ start_one() {
 start() {
   info "Starting Rubberr stack…"
 
+  # Clear any stale listeners first so uvicorn/next never fail on a busy port
+  # (and Next can't silently drift to :3001 and fool the health check).
+  local p pid
+  for p in "$BACKEND_PORT" "$FRONTEND_PORT"; do
+    for pid in $(port_pids "$p"); do kill_tree "$pid" 2>/dev/null || true; done
+  done
+
   start_one backend "$ROOT" \
     env "$PYTHON_BIN" -m uvicorn rubberr.backend.main:app \
       --host 127.0.0.1 --port "$BACKEND_PORT" --reload
@@ -68,8 +75,10 @@ start() {
   start_one frontend "$ROOT/rubberr/frontend" \
     env NEXT_PUBLIC_API_URL="$API_URL" npm run dev -- --port "$FRONTEND_PORT"
 
-  if wait_http "$API_URL/agent/actions" 60; then ok "backend  ready   $API_URL"; else err "backend  did not come up — see $LOG_DIR/backend.log"; fi
-  if wait_http "$APP_URL" 160; then ok "frontend ready   $APP_URL"; else err "frontend did not come up — see $LOG_DIR/frontend.log"; fi
+  info "waiting for backend…"
+  if wait_http "$API_URL/agent/actions" 40; then ok "backend  ready   $API_URL"; else err "backend  did not come up — see $LOG_DIR/backend.log"; fi
+  info "waiting for frontend…"
+  if wait_http "$APP_URL" 60; then ok "frontend ready   $APP_URL"; else err "frontend did not come up — see $LOG_DIR/frontend.log"; fi
 
   echo
   ok   "App:   $APP_URL"
