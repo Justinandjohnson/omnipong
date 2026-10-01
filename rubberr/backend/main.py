@@ -400,11 +400,17 @@ _LOCAL_ORIGINS = [
     "http://localhost:3000",
     "http://localhost:3001",
     "http://localhost:3002",
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:3001",
+    "http://127.0.0.1:3002",
 ]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_LOCAL_ORIGINS,
-    allow_origin_regex=r"https://(.*\.onrender\.com|.*\.vercel\.app)",
+    # Any localhost / 127.0.0.1 / [::1] origin on any port (dev), plus the
+    # hosted previews. Without this, opening the app at 127.0.0.1:3000 instead
+    # of localhost:3000 silently blocks every API call.
+    allow_origin_regex=r"https://(.*\.onrender\.com|.*\.vercel\.app)|http://(localhost|127\.0\.0\.1|\[::1\])(:\d+)?",
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
