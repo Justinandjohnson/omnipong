@@ -1,15 +1,25 @@
 import asyncio
-from browser_manager import BrowserManager
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy import delete
-from models import Activity, Base, Event, Match, Player
-from datetime import datetime
+import io
+import os
 import re
+from datetime import datetime
+
+from sqlalchemy import delete
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from sqlalchemy.orm import sessionmaker
+
+from browser_manager import BrowserManager
+from models import Activity, Base, Player
 
 DATABASE_URL = "sqlite+aiosqlite:///./omnipong.db"
 engine = create_async_engine(DATABASE_URL)
 AsyncSessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
+# Some tournaments take entries by downloadable PDF form rather than an
+# interactive entry page. Those forms are saved here and their extracted text
+# is persisted on the Activity so the agent can read it.
+_REPO_ROOT = os.path.dirname(os.path.abspath(__file__))
+ENTRY_FORMS_DIR = os.path.join(_REPO_ROOT, "entry_forms")
 
 
 async def init_db():
@@ -21,6 +31,9 @@ async def init_db():
 class OmniPongScraper:
     def __init__(self, browser_manager: BrowserManager):
         self.browser_manager = browser_manager
+        # Populated by scrape_activity_events when a tournament's entry is a
+        # downloadable PDF form (see save_entry_pdf). Reset on every call.
+        self.last_entry_form = None
 
     def _normalize_source_id(self, source_id: str) -> str:
         """
@@ -54,7 +67,7 @@ class OmniPongScraper:
         # await asyncio.sleep(3) # Removed fixed wait
         try:
             await page.wait_for_load_state("networkidle", timeout=5000)
-        except:
+        except Exception:
             pass  # Proceed if network doesn't settle, data might be there
 
         # High-fidelity extraction
@@ -188,6 +201,58 @@ class OmniPongScraper:
         print(f"Extracted {len(activities)} valid activities")
         return activities
 
+    @staticmethod
+    def _is_pdf_url(url: str) -> bool:
+        """True when a URL points at a PDF (entry form) rather than a page."""
+        if not url:
+            return False
+        return url.lower().split("?")[0].endswith(".pdf")
+
+    async def save_entry_pdf(self, url: str, source_id: str) -> dict | None:
+        """Download an entry-form PDF, save it, and extract its text.
+
+        Navigating straight to one of these raises Playwright's "Download is
+        starting", so we fetch the bytes via the browser context's request API
+        instead, write them under ``entry_forms/``, and return the extracted
+        text for the caller to persist. Returns ``None`` if the fetch fails;
+        text extraction is best-effort and never fatal.
+        """
+        context = self.browser_manager.context
+        if context is None:
+            return None
+
+        try:
+            response = await context.request.get(url)
+            if not response.ok:
+                print(f"Entry PDF fetch failed ({response.status}): {url}")
+                return None
+            body = await response.body()
+        except Exception as exc:  # noqa: BLE001 - skip a bad form, don't crash the pass
+            print(f"Entry PDF fetch error for {url}: {exc}")
+            return None
+
+        os.makedirs(ENTRY_FORMS_DIR, exist_ok=True)
+        base = os.path.basename(url.split("?")[0]) or "entry-form.pdf"
+        prefix = self._normalize_source_id(source_id) or "entry"
+        safe = re.sub(r"[^A-Za-z0-9_.-]", "_", f"{prefix}-{base}")
+        path = os.path.join(ENTRY_FORMS_DIR, safe)
+        with open(path, "wb") as fh:
+            fh.write(body)
+
+        text = ""
+        try:
+            from pypdf import PdfReader
+
+            reader = PdfReader(io.BytesIO(body))
+            text = "\n".join(
+                (page.extract_text() or "") for page in reader.pages
+            ).strip()
+        except Exception as exc:  # noqa: BLE001 - text extraction is best-effort
+            print(f"Entry PDF text extraction failed for {path}: {exc}")
+
+        print(f"Saved entry form PDF ({len(body)} bytes, {len(text)} chars): {path}")
+        return {"url": url, "path": path, "text": text}
+
     async def scrape_activity_details(self, source_id: str):
         """
         Navigate to the info page for a specific activity to get more details.
@@ -203,7 +268,7 @@ class OmniPongScraper:
             # await asyncio.sleep(1)
             try:
                 await page.wait_for_load_state("networkidle", timeout=3000)
-            except:
+            except Exception:
                 pass
 
             details = await page.evaluate("""
@@ -218,6 +283,11 @@ class OmniPongScraper:
                     };
                 }
             """)
+            if details and self._is_pdf_url(details.get("flyer_url")):
+                form = await self.save_entry_pdf(details["flyer_url"], source_id)
+                if form:
+                    details["entry_form_path"] = form["path"]
+                    details["entry_form_text"] = form["text"]
             return details
         except Exception as e:
             print(f"Error scraping details for {source_id}: {e}")
@@ -263,7 +333,7 @@ class OmniPongScraper:
                     existing.last_scraped = datetime.utcnow()
 
                     # Update Events if provided
-                    if "events" in data and data["events"]:
+                    if data.get("events"):
                         # Clear old events to avoid duplicates (simple sync)
                         from models import Event
 
@@ -280,7 +350,7 @@ class OmniPongScraper:
                     session.add(activity)
                     await session.flush()  # Get ID
 
-                    if "events" in data and data["events"]:
+                    if data.get("events"):
                         from models import Event
 
                         for evt_data in data["events"]:
@@ -298,7 +368,7 @@ class OmniPongScraper:
         async with AsyncSessionLocal() as session:
             from sqlalchemy import select
 
-            stmt = select(Activity).where(Activity.raw_details == None)
+            stmt = select(Activity).where(Activity.raw_details.is_(None))
             if limit:
                 stmt = stmt.limit(limit)
 
@@ -329,6 +399,7 @@ class OmniPongScraper:
         Navigates to the entry page by finding the 'Enter' button on the list page.
         """
         page = await self.browser_manager.get_page()
+        self.last_entry_form = None
 
         # Determine list URL based on source_id or lookup
         # Simple heuristic: T-tourney.asp usually implies e=0 (Tournament) or e=1 (League)
@@ -399,6 +470,11 @@ class OmniPongScraper:
             print(f"Could not find 'Enter' button for {source_id} on list pages.")
             return []
 
+        if self._is_pdf_url(entry_url):
+            print(f"Entry is a PDF form, not a page: {entry_url}")
+            self.last_entry_form = await self.save_entry_pdf(entry_url, source_id)
+            return []
+
         print(f"Found entry URL: {entry_url}. Navigating...")
         await page.goto(entry_url)
         await page.wait_for_load_state("domcontentloaded")
@@ -423,11 +499,11 @@ class OmniPongScraper:
             # await asyncio.sleep(2)
             try:
                 await page.wait_for_selector("table.omnipong", timeout=5000)
-            except:
+            except Exception:
                 pass
 
         # 2. Extract Events
-        events_data = await page.evaluate("""
+        events_data = await page.evaluate(r"""
             () => {
                 const results = [];
                 const tables = Array.from(document.querySelectorAll('table.omnipong'));
@@ -581,14 +657,15 @@ class OmniPongScraper:
         if matches:
             print(f"Found {len(matches)} matches. Saving...")
             async with AsyncSessionLocal() as session:
-                from models import Match
                 from datetime import datetime
+
+                from models import Match
 
                 # ideally check for duplicates
                 for m in matches:
                     try:
                         dt = datetime.strptime(m["date_str"], "%m/%d/%Y").date()
-                    except:
+                    except Exception:
                         dt = None
 
                     # Dedup check (simple)
@@ -744,7 +821,7 @@ class OmniPongScraper:
             await page.wait_for_load_state("domcontentloaded")
 
         # 2. Extract Players and Ratings
-        players = await page.evaluate("""
+        players = await page.evaluate(r"""
             () => {
                 const results = [];
                 const tables = Array.from(document.querySelectorAll('table'));
@@ -1016,7 +1093,7 @@ class OmniPongScraper:
                                 ).date()
                         else:
                             dt = None
-                    except:
+                    except Exception:
                         dt = None
 
                     # Convert date to date_range format for CalendarView (MM/DD/YY)
@@ -1063,7 +1140,7 @@ class OmniPongScraper:
 
                             # Convert date to date_range format for CalendarView (MM/DD/YY)
                             existing.date_range = dt.strftime("%m/%d/%y")
-                        except:
+                        except Exception:
                             pass  # Keep existing date if parsing fails
 
                     time_since_scrape = (
@@ -1162,26 +1239,26 @@ class OmniPongScraper:
             # 3. Find Tournament and Click "Enter"
             # We need to find the specific row.
             found = await page.evaluate(
-                f"""
-                (title) => {{
+                """
+                (title) => {
                     const rows = Array.from(document.querySelectorAll('tr'));
-                    for (const row of rows) {{
-                        if (row.innerText.includes(title)) {{
+                    for (const row of rows) {
+                        if (row.innerText.includes(title)) {
                             const enterBtn = row.querySelector('input[value="Enter"][onclick*="Members.asp"]');
-                            if (enterBtn) {{
+                            if (enterBtn) {
                                 enterBtn.click();
                                 return true;
-                            }}
+                            }
                             // Also check for "action" column style
                             const actionBtn = row.querySelector('input.omnipong_green[title="Click to enter this event"]');
-                            if (actionBtn) {{
+                            if (actionBtn) {
                                 actionBtn.click();
                                 return true;
-                            }}
-                        }}
-                    }}
+                            }
+                        }
+                    }
                     return false;
-                }}
+                }
             """,
                 tournament_title,
             )
@@ -1249,20 +1326,20 @@ class OmniPongScraper:
                 if event_obj and event_obj.get("is_enterable"):
                     # Execute JavaScript click to be robust
                     clicked = await page.evaluate(
-                        f"""
-                        (eventName) => {{
+                        """
+                        (eventName) => {
                              const rows = Array.from(document.querySelectorAll('tr'));
-                             for (const row of rows) {{
-                                 if (row.innerText.includes(eventName)) {{
+                             for (const row of rows) {
+                                 if (row.innerText.includes(eventName)) {
                                      const btn = row.querySelector('input[value="Enter"]');
-                                     if (btn) {{
+                                     if (btn) {
                                          btn.click();
                                          return true;
-                                     }}
-                                 }}
-                             }}
+                                     }
+                                 }
+                             }
                              return false;
-                        }}
+                        }
                     """,
                         event_name,
                     )

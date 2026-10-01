@@ -103,8 +103,20 @@ launchctl kickstart -k gui/$(id -u)/com.omnipong.dailycheck   # run now
   picks events). The UI gates it behind a user click; the MCP tool runs it
   directly, so only point MCP clients you trust at it.
 - `check --dry-run` is the safe way to see what the scout would alert on.
-- Credentials come from `.env` (`OMNIPONG_USER` / `OMNIPONG_PASS`); nothing
-  personal is hard-coded in the new code.
+- Credentials come from `.credentials.json` (preferred) or `.env`
+  (`OMNIPONG_USER` / `OMNIPONG_PASS`); nothing personal is hard-coded in the
+  new code. `.credentials.json` is git-ignored.
+
+## PDF entry forms
+
+Some tournaments have no interactive entry page — their "Enter" button links
+straight to a PDF. Navigating to it raises Playwright's *"Download is
+starting"*, so instead `OmniPongScraper.save_entry_pdf()` fetches the bytes via
+the browser context's request API, saves the file under `entry_forms/`
+(git-ignored, named `<tourney_id>-<form>.pdf`), and extracts its text with
+`pypdf`. The scout stores the form URL on `Activity.flyer_url` and the text on
+`Activity.raw_details`, so the agent can read the form. If text extraction
+fails the file is still saved and the pass continues.
 
 ## Tests
 

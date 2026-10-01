@@ -119,6 +119,15 @@ async def tournaments(*, deep: bool = False) -> dict:
                     a["events"] = await scraper.scrape_activity_events(a["source_id"])
                 except Exception:  # noqa: BLE001 - one bad page must not stop the pass
                     a["events"] = []
+                # PDF entry form: keep the URL as the flyer and the extracted
+                # text as raw_details so the agent can read the form.
+                form = getattr(scraper, "last_entry_form", None)
+                scraper.last_entry_form = None
+                if form:
+                    if form.get("url"):
+                        a["flyer_url"] = form["url"]
+                    if form.get("text"):
+                        a["raw_details"] = form["text"]
             await scraper.save_activities(area)
         return {
             "status": "success",

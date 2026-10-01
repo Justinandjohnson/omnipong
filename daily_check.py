@@ -171,6 +171,15 @@ async def daily_check(
                 except Exception as exc:  # noqa: BLE001 - one bad page must not stop the pass
                     print(f"[daily_check] event scrape failed for {activity['title']}: {exc}")
                     activity["events"] = []
+                # PDF entry form (no interactive page): keep the URL as the
+                # flyer and persist the extracted text so the agent can read it.
+                form = getattr(scraper, "last_entry_form", None)
+                scraper.last_entry_form = None
+                if form:
+                    if form.get("url"):
+                        activity["flyer_url"] = form["url"]
+                    if form.get("text"):
+                        activity["raw_details"] = form["text"]
                 # The activity already exists from the area save above, so this
                 # upserts and attaches its events.
                 await scraper.save_activities([activity])
