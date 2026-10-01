@@ -1,0 +1,7 @@
+mcp_servers:
+  omnipong:
+    command: "__PYTHON__"
+    args:
+      - "__REPO__/omnipong_mcp_server.py"
+    # Browser-driven tools (signup, sync) can take a while; raise if needed.
+    # timeout: 300

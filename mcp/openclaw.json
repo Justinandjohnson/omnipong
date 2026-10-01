@@ -1,0 +1,10 @@
+{
+  "mcp": {
+    "servers": {
+      "omnipong": {
+        "command": "__PYTHON__",
+        "args": ["__REPO__/omnipong_mcp_server.py"]
+      }
+    }
+  }
+}

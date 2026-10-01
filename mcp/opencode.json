@@ -1,0 +1,10 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "omnipong": {
+      "type": "local",
+      "command": ["__PYTHON__", "__REPO__/omnipong_mcp_server.py"],
+      "enabled": true
+    }
+  }
+}
