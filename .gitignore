@@ -40,6 +40,9 @@ debug_*.log
 debug_*.html
 debug_*.png
 
+# ── Local runtime (dev.sh pidfiles + logs) ────────────────────────────────────
+.run/
+
 # ── Playwright ────────────────────────────────────────────────────────────────
 playwright_data/
 playwright_sync_data/

@@ -17,6 +17,30 @@ whether to sign you up.
 | `ops/install_mcp.sh` | Registers the MCP server in every installed client (see `mcp/README.md`). |
 | `ops/install_daily_check.sh` | Installs the macOS launchd job that runs the scout daily. |
 | `tests/test_omnipong_agent.py` | Offline tests for area matching + action/MCP wiring. |
+| `dev.sh` | One command to start/stop the backend + frontend together. |
+
+## Running the app
+
+Everything (FastAPI backend + Next.js frontend) starts and stops with one
+command — no more "backend isn't up" mismatches:
+
+```bash
+./dev.sh start     # or: ./dev.sh up      -> backend :8000 + frontend :3000
+./dev.sh stop      # or: ./dev.sh down    -> stops both, frees the ports
+./dev.sh restart   # stop, then start
+./dev.sh status    # what's running
+./dev.sh logs      # tail both logs
+```
+
+Both processes launch concurrently and are tracked with pidfiles in `.run/`;
+stopping kills the whole process tree (npm/next children + the uvicorn reload
+worker) together. Logs live in `.run/logs/`. Ports are overridable with
+`BACKEND_PORT` / `FRONTEND_PORT`.
+
+The frontend talks to the API via `NEXT_PUBLIC_API_URL` (default
+`http://localhost:8000`); `dev.sh` sets it explicitly. Open the app at
+`http://localhost:3000` — the backend accepts localhost, 127.0.0.1, and `[::1]`
+origins on any port.
 
 ## The daily loop
 
