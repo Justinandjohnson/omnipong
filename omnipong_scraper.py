@@ -255,7 +255,10 @@ class OmniPongScraper:
 
                 if existing:
                     for key, value in data.items():
-                        if hasattr(existing, key) and key != "events":
+                        # Check key != "events" FIRST: hasattr() on the ORM
+                        # relationship would trigger a lazy load outside the
+                        # async greenlet and raise MissingGreenlet.
+                        if key != "events" and hasattr(existing, key):
                             setattr(existing, key, value)
                     existing.last_scraped = datetime.utcnow()
 
