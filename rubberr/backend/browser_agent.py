@@ -615,7 +615,7 @@ async def run_browser_task(
     player_name: str,
     session_token: str,
     openrouter_key: str,
-    model: str = "openai/gpt-4o",
+    model: str = "deepseek/deepseek-v4.1-flash",
     relay_base_url: str,
     on_gate: Optional[GateCallback] = None,
     max_steps: int = 40,
