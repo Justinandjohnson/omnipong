@@ -57,6 +57,8 @@ test-results/
 # ── Debug screenshots ─────────────────────────────────────────────────────────
 signup_verification_failure_after_click.png
 stadium_login_error.png
+omnipong_login_error.png
+logs/
 rubberr/backend/debug/
 
 # ── OS ────────────────────────────────────────────────────────────────────────
