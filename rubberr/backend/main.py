@@ -87,7 +87,16 @@ def _get_user_openrouter_key(request: Request) -> str | None:
     header, there is no actual Phase-1 drift here to reconcile, so Phase 2
     leaves it as-is rather than force a frontend change for no behavior gain.
     """
-    return request.headers.get("X-User-Api-Key") or None
+    header_key = request.headers.get("X-User-Api-Key") or None
+    if header_key:
+        return header_key
+    # Server-side fallback: the app's own key from .env, so owner-only flows
+    # (e.g. USATT sync) work without requiring a BYOK header per request.
+    for env_name in ("OPENROUTER_API_KEY", "ANTHROPIC_API_KEY", "OPENAI_API_KEY"):
+        value = os.getenv(env_name)
+        if value:
+            return value
+    return None
 
 
 def _browser_task_error(result) -> JSONResponse:
