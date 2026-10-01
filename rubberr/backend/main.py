@@ -2603,6 +2603,97 @@ async def sync_account(_: None = Depends(_require_api_key)):
         return {"status": "error", "message": str(e)}
 
 
+class UsattSyncRequest(BaseModel):
+    name: str | None = None
+
+
+@app.post("/tools/sync/usatt")
+async def sync_usatt(
+    request: Request,
+    data: UsattSyncRequest | None = None,
+    _: None = Depends(_require_api_key),
+):
+    """Retrieve the player's official USATT rating through the relay and store it.
+
+    Reuses the same relay/browser path as GET /tools/lookup/usatt (USATT is
+    Cloudflare-walled, so it must go through a real browser). The retrieved
+    rating is written to users.official_rating/current_rating and the rating
+    history is mirrored into rating_history (source='usatt'). If the relay or
+    its operator token is not configured, this returns a clean error instead
+    of guessing a number."""
+    session = SessionLocal()
+    try:
+        row = session.execute(text("SELECT id, name FROM users LIMIT 1")).fetchone()
+        if not row:
+            return {"status": "error", "message": "No user record to update."}
+        uid = row._mapping["id"]
+        name = (data.name if data and data.name else None) or row._mapping["name"]
+        name = name or os.getenv("PLAYER_FULL_NAME") or os.getenv("PLAYER_NAME")
+        if not name:
+            return {"status": "error", "message": "No player name set to look up."}
+    finally:
+        session.close()
+
+    try:
+        profile = await tool_lookup_usatt(name=name, request=request)
+    except HTTPException as e:
+        return {"status": "error", "message": str(e.detail)}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+    if profile.get("status") != "success":
+        return {"status": "error", "message": profile.get("message") or "USATT lookup failed."}
+
+    player = profile.get("player") or {}
+    rating = player.get("rating")
+    usatt_id = player.get("usatt_id")
+    history = profile.get("rating_history") or []
+
+    stored_history = 0
+    session = SessionLocal()
+    try:
+        fields: list[str] = []
+        params: dict = {"uid": uid}
+        if isinstance(rating, (int, float)):
+            fields += ["official_rating = :r", "current_rating = :r"]
+            params["r"] = float(rating)
+        if usatt_id:
+            fields += ["usatt_id = :u"]
+            params["u"] = str(usatt_id)
+        if fields:
+            session.execute(
+                text(f"UPDATE users SET {', '.join(fields)} WHERE id = :uid"), params
+            )
+        if history:
+            session.execute(text("DELETE FROM rating_history WHERE source = 'usatt'"))
+            for h in history:
+                if not isinstance(h, dict):
+                    continue
+                when, value = h.get("date"), h.get("rating")
+                if when and isinstance(value, (int, float)):
+                    session.execute(
+                        text(
+                            "INSERT INTO rating_history (date, rating, source, notes) "
+                            "VALUES (:d, :r, 'usatt', 'USATT lookup')"
+                        ),
+                        {"d": when, "r": float(value)},
+                    )
+                    stored_history += 1
+        session.commit()
+    except Exception as e:
+        session.rollback()
+        return {"status": "error", "message": f"USATT fetched but not saved: {e}"}
+    finally:
+        session.close()
+
+    return {
+        "status": "success",
+        "message": f"USATT rating {rating} for {player.get('name') or name}.",
+        "player": player,
+        "rating_history_count": stored_history,
+    }
+
+
 @app.get("/players/{player_name}/scouting")
 async def get_player_scouting(player_name: str, _: None = Depends(_require_api_key)):
     """
