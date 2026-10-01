@@ -2488,6 +2488,76 @@ def update_phone(data: PhoneUpdate):
         session.close()
 
 
+class PlayerSettings(BaseModel):
+    name: str
+    rating: float | None = None
+    usatt_id: str | None = None
+
+
+@app.post("/settings/player")
+def update_player(data: PlayerSettings):
+    """Set the player identity (name, optional rating/usatt id).
+
+    Used by the agent, the map, and the ranking recommendations so the app
+    knows who it is scouting for."""
+    session = SessionLocal()
+    try:
+        user_row = session.execute(text("SELECT id FROM users LIMIT 1")).fetchone()
+        if not user_row:
+            return {"status": "error", "message": "No user record to update."}
+
+        fields: dict = {"name": data.name}
+        if data.rating is not None:
+            fields["current_rating"] = data.rating
+            fields["official_rating"] = data.rating
+        if data.usatt_id is not None:
+            fields["usatt_id"] = data.usatt_id
+
+        def _apply(values: dict) -> None:
+            sets = ", ".join(f"{col} = :{col}" for col in values)
+            session.execute(
+                text(f"UPDATE users SET {sets} WHERE id = :uid"),
+                {**values, "uid": user_row[0]},
+            )
+
+        try:
+            _apply(fields)
+            session.commit()
+        except Exception as e:
+            # Auto-create any missing columns, then retry (mirrors
+            # /settings/update_phone).
+            if "no such column" not in str(e).lower():
+                raise
+            session.rollback()
+            for col, coltype in (
+                ("name", "TEXT"),
+                ("current_rating", "REAL"),
+                ("official_rating", "REAL"),
+                ("usatt_id", "TEXT"),
+            ):
+                try:
+                    session.execute(text(f"ALTER TABLE users ADD COLUMN {col} {coltype}"))
+                    session.commit()
+                except Exception:
+                    session.rollback()
+            _apply(fields)
+            session.commit()
+
+        return {
+            "status": "success",
+            "message": "Player updated",
+            "player": {
+                "name": data.name,
+                "rating": data.rating,
+                "usatt_id": data.usatt_id,
+            },
+        }
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+    finally:
+        session.close()
+
+
 @app.get("/players/{player_name}/scouting")
 async def get_player_scouting(player_name: str, _: None = Depends(_require_api_key)):
     """
