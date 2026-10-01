@@ -76,8 +76,10 @@ export default function AgentConsole() {
 
   // Player identity — who the agent scouts/ranks for.
   const [playerName, setPlayerName] = useState("");
-  const [playerRating, setPlayerRating] = useState("");
+  const [playerRating, setPlayerRating] = useState<number | null>(null);
+  const [playerUsatt, setPlayerUsatt] = useState<string | null>(null);
   const [savingPlayer, setSavingPlayer] = useState(false);
+  const [syncing, setSyncing] = useState(false);
   const [playerMsg, setPlayerMsg] = useState<string | null>(null);
 
   useEffect(() => {
@@ -85,7 +87,8 @@ export default function AgentConsole() {
       .then((r) => (r.ok ? r.json() : null))
       .then((u) => {
         if (u?.full_name) setPlayerName(u.full_name);
-        if (u?.rating) setPlayerRating(String(u.rating));
+        if (typeof u?.rating === "number") setPlayerRating(u.rating);
+        if (u?.usatt_number) setPlayerUsatt(u.usatt_number);
       })
       .catch(() => {});
   }, []);
@@ -94,13 +97,10 @@ export default function AgentConsole() {
     setSavingPlayer(true);
     setPlayerMsg(null);
     try {
-      const body: { name: string; rating?: number } = { name: playerName.trim() };
-      const r = Number(playerRating);
-      if (playerRating.trim() !== "" && !Number.isNaN(r)) body.rating = r;
       const res = await fetch(`${API_URL}/settings/player`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
+        body: JSON.stringify({ name: playerName.trim() }),
       });
       const data = await res.json();
       if (!res.ok || data?.status === "error") {
@@ -112,6 +112,30 @@ export default function AgentConsole() {
       setPlayerMsg(e instanceof Error ? e.message : String(e));
     } finally {
       setSavingPlayer(false);
+    }
+  }
+
+  async function syncAccount() {
+    setSyncing(true);
+    setPlayerMsg(null);
+    try {
+      const res = await fetch(`${API_URL}/tools/sync/account`, { method: "POST" });
+      const data = await res.json();
+      if (!res.ok || data?.status === "error") {
+        throw new Error(data?.message || `Sync failed (HTTP ${res.status})`);
+      }
+      const no = data?.account_number ?? data?.account?.account_number;
+      if (no) setPlayerUsatt(String(no));
+      const count = data?.finished_count ?? 0;
+      setPlayerMsg(
+        no
+          ? `Synced account #${no} (${count} finished events).`
+          : "Synced, but no account number was found.",
+      );
+    } catch (e) {
+      setPlayerMsg(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSyncing(false);
     }
   }
 
@@ -180,16 +204,27 @@ export default function AgentConsole() {
               onChange={(e) => setPlayerName(e.target.value)}
             />
           </div>
-          <div className="w-36">
-            <label className="block text-xs text-gray-500 mb-1">Rating (optional)</label>
-            <input
-              className={inputCls}
-              type="number"
-              placeholder="1500"
-              value={playerRating}
-              onChange={(e) => setPlayerRating(e.target.value)}
-            />
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">USATT #</label>
+            <div className="rounded-lg border border-[#333] px-3 py-2 text-sm text-white min-w-[110px]">
+              {playerUsatt || "—"}
+            </div>
           </div>
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Rating (from results)</label>
+            <div className="rounded-lg border border-[#333] px-3 py-2 text-sm text-white min-w-[110px]">
+              {playerRating ?? "—"}
+            </div>
+          </div>
+          <button
+            onClick={syncAccount}
+            disabled={syncing}
+            className="inline-flex items-center gap-2 rounded-lg border border-[#333] px-4 py-2 text-sm font-medium text-white
+              hover:bg-[#1a1a1a] disabled:opacity-40 disabled:cursor-not-allowed transition"
+          >
+            {syncing ? <Loader2 size={16} className="animate-spin" /> : <RefreshCw size={16} />}
+            {syncing ? "Syncing…" : "Sync account"}
+          </button>
           <button
             onClick={savePlayer}
             disabled={savingPlayer || !playerName.trim()}
