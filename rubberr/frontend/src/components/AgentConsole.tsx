@@ -100,7 +100,10 @@ export default function AgentConsole() {
       const res = await fetch(`${API_URL}/settings/player`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: playerName.trim() }),
+        body: JSON.stringify({
+          name: playerName.trim(),
+          ...(typeof playerRating === "number" ? { rating: playerRating } : {}),
+        }),
       });
       const data = await res.json();
       if (!res.ok || data?.status === "error") {
@@ -224,11 +227,18 @@ export default function AgentConsole() {
               {playerUsatt || "—"}
             </div>
           </div>
-          <div>
-            <label className="block text-xs text-gray-500 mb-1">Rating (from results)</label>
-            <div className="rounded-lg border border-[#333] px-3 py-2 text-sm text-white min-w-[110px]">
-              {playerRating ?? "—"}
-            </div>
+          <div className="w-[130px]">
+            <label className="block text-xs text-gray-500 mb-1">Rating</label>
+            <input
+              className={inputCls}
+              type="number"
+              inputMode="numeric"
+              placeholder="e.g. 1333"
+              value={playerRating ?? ""}
+              onChange={(e) =>
+                setPlayerRating(e.target.value === "" ? null : Number(e.target.value))
+              }
+            />
           </div>
           <button
             onClick={syncAccount}
