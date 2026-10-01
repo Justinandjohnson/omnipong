@@ -208,15 +208,42 @@ async def _run_browser_agent_task(
     if not relay_base_url:
         raise HTTPException(status_code=500, detail="RELAY_BASE_URL is not configured on the server.")
 
-    return await run_browser_task(
-        task=task,
-        site=site,
-        player_name=player_name,
-        session_token=session_token,
-        openrouter_key=openrouter_key,
-        model=model or os.getenv("BROWSER_AGENT_MODEL", "deepseek/deepseek-v4.1-flash"),
-        relay_base_url=relay_base_url,
-    )
+    primary = model or os.getenv("BROWSER_AGENT_MODEL", "openai/gpt-5.5")
+    fallback = os.getenv("BROWSER_AGENT_FALLBACK_MODEL", "deepseek/deepseek-v4.1-flash")
+    models = [primary]
+    if fallback and fallback != primary:
+        models.append(fallback)
+
+    def _should_retry(res) -> bool:
+        # A model that 404s/400s can still "finish" by declaring not_found, so
+        # retry when a USATT lookup comes back empty (no player) as well as on
+        # an outright LLM error. Non-LLM walls (gate timeout, companion gone)
+        # are not retried — another model would hit the same wall.
+        if res.status == "llm_error":
+            return True
+        if site == "usatt":
+            profile = res.matches[0] if res.matches else {}
+            if not isinstance(profile, dict):
+                return True
+            if profile.get("not_found") or not profile.get("player"):
+                return True
+        return False
+
+    result = None
+    for chosen in models:
+        result = await run_browser_task(
+            task=task,
+            site=site,
+            player_name=player_name,
+            session_token=session_token,
+            openrouter_key=openrouter_key,
+            model=chosen,
+            relay_base_url=relay_base_url,
+        )
+        if not _should_retry(result):
+            return result
+        print(f"[agent] model {chosen!r} gave no usable result ({result.error}) — falling back")
+    return result
 
 
 # --- Tier-3 gate-event SSE bridge (Phase 2 seam #1) ---
@@ -266,7 +293,7 @@ async def _run_and_stream_browser_task(
             player_name=player_name,
             session_token=session_token,
             openrouter_key=openrouter_key,
-            model=model or os.getenv("BROWSER_AGENT_MODEL", "deepseek/deepseek-v4.1-flash"),
+            model=model or os.getenv("BROWSER_AGENT_MODEL", "openai/gpt-5.5"),
             relay_base_url=relay_base_url,
             on_gate=on_gate,
         )
