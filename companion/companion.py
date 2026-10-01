@@ -40,7 +40,8 @@ class Companion:
         self.chrome_port = chrome_port
         self.launch_chrome_on_start = launch_chrome_on_start
 
-        self._http = aiohttp.ClientSession()
+        # Created inside run() so aiohttp gets a running event loop.
+        self._http: aiohttp.ClientSession | None = None
         self._relay_ws: aiohttp.ClientWebSocketResponse | None = None
         self._channels: dict[int, aiohttp.ClientWebSocketResponse] = {}
         self._channel_tasks: dict[int, asyncio.Task] = {}
@@ -52,6 +53,7 @@ class Companion:
     # ---- lifecycle -------------------------------------------------
 
     async def run(self) -> None:
+        self._http = aiohttp.ClientSession()
         if self.launch_chrome_on_start:
             launch_chrome(self.chrome_port)
 
@@ -89,7 +91,8 @@ class Companion:
             if not ws.closed:
                 await ws.close()
         self._gate.close()
-        await self._http.close()
+        if self._http is not None:
+            await self._http.close()
 
     async def stop(self) -> None:
         self._stopping.set()
