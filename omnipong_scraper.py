@@ -686,6 +686,102 @@ class OmniPongScraper:
 
         return matches
 
+    async def scrape_my_account(self):
+        """Read the OmniPong member area without hard-coding its shape.
+
+        Nothing depends on exact wording, tiers, field names, or date
+        formats. It returns the page's raw text plus generically derived
+        structures: every "label value" line becomes a field, every
+        Members.asp?M=<token> link becomes a named panel, and the history
+        panel comes back as raw rows tagged as year headers / date rows, so
+        callers adapt to whatever the site shows today.
+        """
+        await self.browser_manager.login_omnipong()
+        page = await self.browser_manager.get_page()
+        print("Reading OmniPong member account...")
+        await page.goto("https://www.omnipong.com/members.asp?m=21")
+        await page.wait_for_load_state("domcontentloaded")
+
+        raw = await page.evaluate("() => document.body.innerText || ''")
+        panels = await page.evaluate("""
+            () => {
+                const out = {};
+                for (const el of document.querySelectorAll('input, a, td, span, div, li')) {
+                    const target = el.getAttribute('onclick') || el.getAttribute('href') || '';
+                    const m = target.match(/Members\\.asp\\?M=([0-9A-Fa-f]+)/);
+                    if (!m) continue;
+                    const label = (el.value || el.textContent || '').trim().replace(/\\s+/g, ' ');
+                    if (label && label.length < 40 && !(label in out)) out[label] = m[1];
+                }
+                return out;
+            }
+        """)
+
+        lines = [ln.strip() for ln in raw.splitlines()]
+
+        # Generic label/value extraction with no whitelist of names: any
+        # "something value" line separated by ':' or '#' is captured as-is.
+        fields = {}
+        for line in lines:
+            if not line or len(line) > 120:
+                continue
+            m = re.match(r"^([A-Za-z][A-Za-z /#]{1,30}?)\\s*[:#]\\s*(\\S.*)$", line)
+            if m:
+                fields.setdefault(m.group(1).strip(), m.group(2).strip())
+
+        # Some layouts put the label and value on separate lines ("Account #"
+        # then "1184417"); pair a line ending in ':'/'#' with the next line.
+        for i, line in enumerate(lines):
+            if line.endswith(":") or line.endswith("#"):
+                label = line.rstrip(":# ").strip()
+                nxt = lines[i + 1] if i + 1 < len(lines) else ""
+                if label and nxt:
+                    fields.setdefault(label, nxt.strip())
+
+        # Account number, tolerantly: the longest digit run on a line that
+        # mentions "account" (or the line after it), whatever the layout.
+        account_number = None
+        for i, line in enumerate(lines):
+            if "account" in line.lower():
+                window = line + " " + (lines[i + 1] if i + 1 < len(lines) else "")
+                digits = re.findall(r"\d{4,}", window)
+                if digits:
+                    account_number = max(digits, key=len)
+                    break
+
+        # Whichever panel looks like history/results; not tied to one label.
+        rows = []
+        wanted = next(
+            (tok for label, tok in panels.items()
+             if re.search(r"finish|past|result|history|archive", label, re.I)),
+            None,
+        )
+        if wanted:
+            await page.goto(f"https://www.omnipong.com/Members.asp?M={wanted}")
+            await page.wait_for_load_state("domcontentloaded")
+            panel_text = await page.evaluate("() => document.body.innerText || ''")
+            for ln in panel_text.splitlines():
+                ln = ln.strip()
+                if not ln:
+                    continue
+                rows.append({
+                    "text": ln[:200],
+                    "is_year": ln.isdigit() and len(ln) == 4,
+                    "has_date": any(ch.isdigit() for ch in ln) and "/" in ln,
+                })
+
+        result = {
+            "account_number": account_number,
+            "fields": fields,
+            "panels": list(panels.keys()),
+            "rows": rows[:500],
+            "raw": raw,
+        }
+        print(
+            f"Account {account_number} · fields={len(fields)} · rows={len(result['rows'])}"
+        )
+        return result
+
     async def scrape_rating_history(self):
         """
         Scrapes tournament history to get the user's rating progression (USATT Rating).
