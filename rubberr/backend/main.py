@@ -214,7 +214,7 @@ async def _run_browser_agent_task(
         player_name=player_name,
         session_token=session_token,
         openrouter_key=openrouter_key,
-        model=model or os.getenv("BROWSER_AGENT_MODEL", "google/gemini-3-pro-preview"),
+        model=model or os.getenv("BROWSER_AGENT_MODEL", "openai/gpt-4o"),
         relay_base_url=relay_base_url,
     )
 
@@ -266,7 +266,7 @@ async def _run_and_stream_browser_task(
             player_name=player_name,
             session_token=session_token,
             openrouter_key=openrouter_key,
-            model=model or os.getenv("BROWSER_AGENT_MODEL", "google/gemini-3-pro-preview"),
+            model=model or os.getenv("BROWSER_AGENT_MODEL", "openai/gpt-4o"),
             relay_base_url=relay_base_url,
             on_gate=on_gate,
         )
