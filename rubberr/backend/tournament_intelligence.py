@@ -1,5 +1,12 @@
 import os
 
+try:
+    # Imported as a package submodule (uvicorn: rubberr.backend.main).
+    from .rating_engine import build_tournament_recommendation
+except ImportError:
+    # Imported as a top-level module via sys.path (daily_check, tests).
+    from rating_engine import build_tournament_recommendation
+
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
@@ -85,49 +92,33 @@ def get_tournament_intelligence(tournament_title: str | None = None, limit: int 
                 continue
 
             raw_events = t_events.get(t['id'], [])
-            rec_events = []
-            
-            # A. Event Recommendations (Logic: User Rating vs Limits)
-            rating_events = [e for e in raw_events if e.get('rating_limit')]
-            rating_events.sort(key=lambda x: x['rating_limit'])
-            
-            for e in rating_events:
-                limit_val = e['rating_limit']
-                if limit_val >= user_rating:
-                    diff = limit_val - user_rating
-                    competitiveness = ""
-                    if diff <= 150:
-                        competitiveness = "Competitive"
-                    elif diff <= 400:
-                        competitiveness = "Challenge"
-                    
-                    if competitiveness:
-                        rec_events.append({
-                            'name': e['name'],
-                            'rating_limit': e['rating_limit'],
-                            'fee': e.get('fee'),
-                            'competitiveness': competitiveness
-                        })
-                    
-                    if len(rec_events) >= 2: break
-            
-            # Fallback: If no rating-limited events match, suggest the first available events
-            if not rec_events and raw_events:
-                # Suggest first 2 events if they are singles/open
-                for e in raw_events[:2]:
-                    rec_events.append({
-                        'name': e['name'],
-                        'rating_limit': e.get('rating_limit'),
-                        'fee': e.get('fee'),
-                        'competitiveness': 'Recommended'
-                    })
-            
+
+            # A. Event Recommendations — score every event with the USATT
+            # rating engine (expected rating points * win probability), biased
+            # toward playing up modestly. See rating_engine.py.
+            rec = build_tournament_recommendation(t, raw_events, user_rating, top_n=2)
+            rec_events = rec["recommended_events"]
+
             if not rec_events:
-                # No events available, create a generic placeholder
-                if "Open" in t['title']:
-                    rec_events.append({'name': 'Open Singles', 'competitiveness': 'Recommended'})
-                else:
-                    rec_events.append({'name': 'Singles Entry', 'competitiveness': 'Recommended'})
+                # No events scraped yet — show a generic entry so the UI still
+                # has something to show.
+                generic = "Open Singles" if "Open" in t['title'] else "Singles Entry"
+                rec_events = [{
+                    'name': generic,
+                    'rating_limit': None,
+                    'fee': None,
+                    'competitiveness': 'Recommended',
+                    'recommended': False,
+                    'reason': 'Events not published yet.',
+                }]
+
+            # Difficulty: how far the recommended field sits above the player.
+            if rec["recommended_events"]:
+                fields = [e["estimated_field_rating"] for e in rec["recommended_events"]]
+                avg_field = sum(fields) / len(fields)
+                difficulty = max(1, min(10, round(5 + (avg_field - user_rating) / 200)))
+            else:
+                difficulty = 5
 
             # B. Known Opponents
             likely_players = []
@@ -152,8 +143,16 @@ def get_tournament_intelligence(tournament_title: str | None = None, limit: int 
                 "recommended_events": rec_events,
                 "known_players_likely_attending": likely_players,
                 "doubles_partner_suggestions": doubles,
-                "difficulty_score": 5,
-                "insights": [f"Based on your rating of {user_rating}, we found {len(rec_events)} suitable events."]
+                "difficulty_score": difficulty,
+                "recommended": rec["recommended"],
+                "expected_rating_change": rec["expected_rating_change"],
+                "priority_score": rec["priority_score"],
+                "reason": rec["reason"],
+                "insights": [
+                    rec["reason"],
+                    f"Based on your rating of {user_rating}, we found "
+                    f"{len(rec_events)} suitable events.",
+                ],
             })
 
         return {
