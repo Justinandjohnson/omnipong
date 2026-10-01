@@ -798,6 +798,39 @@ async def check_tournaments():
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# --- OmniPong agent bridge ---
+# Exposes the same six actions as the MCP server (omnipong_mcp_server.py) so the
+# GUI "Agent" tab and any MCP client drive the exact same code path. See
+# docs/OMNIPONG_AGENT.md. The action list is served so the UI stays in sync.
+class AgentActionRequest(BaseModel):
+    action: str
+    params: dict = {}
+
+
+@app.get("/agent/actions")
+def agent_actions():
+    """List the actions the OmniPong agent exposes (mirrors ACTION_MAP)."""
+    from omnipong_agent import ACTION_MAP
+
+    return {"actions": sorted(ACTION_MAP.keys())}
+
+
+@app.post("/agent/action")
+async def agent_action(
+    req: AgentActionRequest, request: Request, _: None = Depends(_require_api_key)
+):
+    """Run one OmniPong agent action in-process and return its JSON result.
+
+    `action` is one of check|signup|search|sync|matches|tournaments; `params`
+    are passed straight through to omnipong_agent.run_action. Unknown actions
+    return a clean {status: error} dict rather than raising, so a bad action
+    name never 500s."""
+    from omnipong_agent import run_action
+
+    result = await run_action(req.action, **(req.params or {}))
+    return {"status": "ok", "action": req.action, "result": result}
+
+
 @app.post("/sync/omnipong")
 async def sync_omnipong():
     try:
