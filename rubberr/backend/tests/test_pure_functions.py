@@ -11,7 +11,6 @@ Run from the project root (/Users/jjohnson/Desktop/omnipong) with:
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # Match result parsing helpers
 # ---------------------------------------------------------------------------

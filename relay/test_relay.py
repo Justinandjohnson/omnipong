@@ -24,12 +24,11 @@ import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
 
-import pytest
-from starlette.testclient import TestClient
-
 import config
 import protocol as P
+import pytest
 import server
+from starlette.testclient import TestClient
 
 REGISTER_TOKEN = "rt_test_token_0001"
 USER_ID = "u_test_0001"

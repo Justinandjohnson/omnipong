@@ -1,10 +1,12 @@
 import asyncio
-from browser_manager import BrowserManager
-from omnipong_scraper import OmniPongScraper
-from models import Player
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
-from sqlalchemy.orm import sessionmaker
+
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from sqlalchemy.orm import sessionmaker
+
+from browser_manager import BrowserManager
+from models import Player
+from omnipong_scraper import OmniPongScraper
 
 DATABASE_URL = "sqlite+aiosqlite:///./omnipong.db"
 

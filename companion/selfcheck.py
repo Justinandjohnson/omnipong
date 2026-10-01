@@ -18,9 +18,9 @@ import json
 import re
 import sys
 
-from aiohttp import web, ClientSession, ClientTimeout, WSMsgType
-
 import protocol as proto
+from aiohttp import ClientSession, ClientTimeout, WSMsgType, web
+
 from companion import Companion
 
 RELAY_PORT = 18765
@@ -211,7 +211,7 @@ async def main() -> int:
 
     try:
         await asyncio.wait_for(companion.run(), timeout=15)
-    except asyncio.TimeoutError:
+    except TimeoutError:
         results.setdefault("error", "companion.run() did not complete within 15s")
     finally:
         await relay_runner.cleanup()

@@ -1,5 +1,7 @@
 import asyncio
+
 from browser_manager import BrowserManager
+
 
 async def debug_regional():
     manager = BrowserManager()
@@ -20,8 +22,8 @@ async def debug_regional():
         # Check links
         links = await page.evaluate("""() => Array.from(document.querySelectorAll('a')).map(a => ({t: a.innerText, h: a.href}))""")
         print(f"Found {len(links)} links. First 10:")
-        for l in links[:10]:
-            print(f" - {l['t']} -> {l['h']}")
+        for link in links[:10]:
+            print(f" - {link['t']} -> {link['h']}")
             
     finally:
         await manager.stop()

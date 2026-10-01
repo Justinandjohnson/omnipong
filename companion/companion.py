@@ -19,7 +19,6 @@ import signal
 import sys
 
 import aiohttp
-
 import protocol as proto
 from chrome import launch_chrome
 from gate_ui import GateUI

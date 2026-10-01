@@ -1,6 +1,8 @@
 import asyncio
+
 from browser_manager import BrowserManager
 from omnipong_scraper import OmniPongScraper, init_db
+
 
 async def main():
     print("Initializing Database...")
@@ -25,9 +27,10 @@ async def main():
         print("Starting Deep Event/Detail Scrape...")
         # We focus on capturing *events* for upcoming tournaments
         # Iterate activities from DB to be safe
+        from sqlalchemy import select
+
         from models import Activity
         from omnipong_scraper import AsyncSessionLocal
-        from sqlalchemy import select
         
         async with AsyncSessionLocal() as session:
             stmt = select(Activity).where(Activity.activity_type == 'tournament') # Focus on tournaments for now

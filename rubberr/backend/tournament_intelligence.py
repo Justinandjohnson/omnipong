@@ -1,4 +1,5 @@
 import os
+
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
@@ -8,7 +9,7 @@ DB_URL = f"sqlite:///{DB_PATH}"
 engine = create_engine(DB_URL, connect_args={"check_same_thread": False})
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-def get_tournament_intelligence(tournament_title: str = None, limit: int = 5):
+def get_tournament_intelligence(tournament_title: str | None = None, limit: int = 5):
     """
     Analyze tournaments to provide AI-enhanced insights:
     - Who typically wins events at tournaments

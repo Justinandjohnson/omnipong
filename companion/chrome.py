@@ -5,13 +5,13 @@ resolved, raise a clean error — no silent fallback chains, no guessing.
 """
 from __future__ import annotations
 
+import json
 import os
 import platform
 import subprocess
 import time
-import urllib.request
 import urllib.error
-import json
+import urllib.request
 
 
 def _candidate_chrome_paths() -> list[str]:

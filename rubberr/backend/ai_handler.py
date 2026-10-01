@@ -1,8 +1,10 @@
-import os
 import json
+import os
+from typing import Optional
+
 from openai import OpenAI
 from pydantic import BaseModel, Field
-from typing import Optional, List
+
 
 # Helper to get client
 def get_client():
@@ -35,7 +37,7 @@ class MatchIntent(BaseModel):
 class AIResponse(BaseModel):
     intent: MatchIntent
     confirmation_message: str = Field(..., description="A natural language response confirming match details OR answering the query if simple.")
-    missing_info: List[str] = Field(..., description="List of fields that are missing to complete the record (e.g. ['opponent_name'])")
+    missing_info: list[str] = Field(..., description="List of fields that are missing to complete the record (e.g. ['opponent_name'])")
 
 async def transcribe_audio(file_path: str) -> str:
     """

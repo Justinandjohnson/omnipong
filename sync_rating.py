@@ -1,5 +1,7 @@
 import asyncio
+
 from browser_manager import BrowserManager
+
 
 async def main():
     m = BrowserManager()

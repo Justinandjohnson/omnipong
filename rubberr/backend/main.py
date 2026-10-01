@@ -1,19 +1,19 @@
-from fastapi import Depends, FastAPI, HTTPException, Request
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, StreamingResponse
-from sqlalchemy import create_engine, text
-from sqlalchemy.orm import sessionmaker
-from datetime import datetime
-import subprocess
 import asyncio
+import json
 import os
+import subprocess
 import sys
+from datetime import datetime
 
 import anthropic
 import httpx
-import json
-from pydantic import BaseModel
 from dotenv import load_dotenv
+from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse, StreamingResponse
+from pydantic import BaseModel
+from sqlalchemy import create_engine, text
+from sqlalchemy.orm import sessionmaker
 
 # Load .env variables
 load_dotenv(os.path.join(os.path.dirname(__file__), "../../.env"))
@@ -25,10 +25,10 @@ PLAYER_FULL_NAME = os.getenv("PLAYER_FULL_NAME", PLAYER_NAME)
 # Add project root to path so we can import browser_manager
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 from browser_manager import BrowserManager
+from models import Base
 
 # Import shared utilities
 from .tournament_intelligence import get_tournament_intelligence
-from models import Base
 
 
 # Initialize models
@@ -343,7 +343,7 @@ def _sse_response_for_sync_session(session_id: str) -> StreamingResponse:
             while True:
                 try:
                     event_name, data = await asyncio.wait_for(queue.get(), timeout=15.0)
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     # C2: keep the stream alive through Cloudflare's ~100s idle
                     # cutoff during a silent gate wait.
                     yield ": keepalive\n\n"
@@ -364,7 +364,7 @@ browser_manager = BrowserManager()
 active_processes = []
 
 
-async def run_script_managed(script_path: str, args: list = None, cwd: str = None):
+async def run_script_managed(script_path: str, args: list | None = None, cwd: str | None = None):
     """Helper to run a script, track it, and clean up after."""
     if args is None:
         args = []
@@ -539,7 +539,7 @@ def get_user():
 
 
 @app.get("/matches")
-def get_matches(source: str = None):
+def get_matches(source: str | None = None):
     session = SessionLocal()
     try:
         # Build Query
@@ -576,7 +576,7 @@ def get_matches(source: str = None):
                     p1, p2 = map(int, res_str.split("-"))
                     if p1 > p2:
                         is_win = True
-                except:
+                except Exception:
                     pass
 
             # Parse Sets for Patterns
@@ -594,7 +594,7 @@ def get_matches(source: str = None):
                                 parsed_sets.append((sp1, sp2))
                                 if abs(sp1 - sp2) <= 2:
                                     has_close_set = True
-                            except:
+                            except Exception:
                                 pass
 
                     m["is_close_game"] = has_close_set
@@ -637,10 +637,10 @@ def delete_match(match_id: int):
 
 @app.post("/tournaments/signup")
 async def signup_tournament(
-    tournament_title: str, recommended_events: list[str] = None
+    tournament_title: str, recommended_events: list[str] | None = None
 ):
     try:
-        from omnipong_scraper import OmniPongScraper, AsyncSessionLocal
+        from omnipong_scraper import AsyncSessionLocal, OmniPongScraper
 
         scraper = OmniPongScraper(browser_manager)
 
@@ -663,8 +663,9 @@ async def signup_tournament(
 
         if result.get("status") == "success":
             # Update DB status to 'Entered'
-            from models import Activity
             from sqlalchemy import select
+
+            from models import Activity
 
             async with AsyncSessionLocal() as session:
                 stmt = select(Activity).where(Activity.title == tournament_title)
@@ -756,7 +757,7 @@ def get_notifications():
 
             try:
                 d["content"] = json.loads(d["content"])
-            except:
+            except Exception:
                 pass
             notifications.append(d)
         return notifications
@@ -1096,7 +1097,7 @@ def get_stats(source: str = "omnipong"):
                     p1, p2 = map(int, res_str.split("-"))
                     if p1 > p2:
                         is_win = True
-                except:
+                except Exception:
                     pass
 
             if is_win:
@@ -1143,7 +1144,7 @@ def get_stats(source: str = "omnipong"):
                     # print(f"Error parsing sets: {ex}")
                     pass
 
-        win_rate = round((wins / total * 100)) if total > 0 else 0
+        win_rate = round(wins / total * 100) if total > 0 else 0
 
         # 2. Tournaments (Distinct Days)
         tourney_query = text(
@@ -1291,7 +1292,7 @@ async def tool_sync_tournaments(scope: str = "regional"):
             print("🎾 [BACKEND] Returning ERROR response")
             return {"status": "error", "message": f"Sync failed: {stderr.decode()}"}
     except Exception as e:
-        print(f"🎾 [BACKEND] Exception caught: {type(e).__name__}: {str(e)}")
+        print(f"🎾 [BACKEND] Exception caught: {type(e).__name__}: {e!s}")
         import traceback
 
         print(f"🎾 [BACKEND] Traceback:\n{traceback.format_exc()}")
@@ -1300,7 +1301,7 @@ async def tool_sync_tournaments(scope: str = "regional"):
 
 @app.post("/tools/query/matches")
 def tool_query_matches(
-    opponent_name: str = None, date_from: str = None, result: str = None
+    opponent_name: str | None = None, date_from: str | None = None, result: str | None = None
 ):
     session = SessionLocal()
     try:
@@ -1335,7 +1336,7 @@ def tool_stats_calculate(metric: str = "win_rate"):
 
 
 @app.post("/tools/query/tournaments")
-def tool_query_tournaments(location: str = None):
+def tool_query_tournaments(location: str | None = None):
     session = SessionLocal()
     try:
         query_str = "SELECT title, location, date_range, status FROM activities WHERE activity_type='tournament'"
@@ -1395,8 +1396,9 @@ def tool_search_players(req: PlayerSearch):
 def save_arcade_match(
     session, opponent_name, result, score_summary, set_scores, date_obj=None
 ):
-    from models import Match
     from datetime import datetime
+
+    from models import Match
 
     # 1. Find/Create Opponent
     opp_rating = 1200
@@ -1423,10 +1425,12 @@ def save_arcade_match(
 
 
 # --- MULTI-MODAL & AI HANDLERS ---
-from .ai_handler import transcribe_audio, parse_match_intent
-from fastapi import File, UploadFile, Request, Response
-import shutil
 import os
+import shutil
+
+from fastapi import File, Request, Response, UploadFile
+
+from .ai_handler import parse_match_intent, transcribe_audio
 
 
 @app.post("/arcade/transcribe")
@@ -1536,7 +1540,7 @@ async def twilio_webhook(request: Request):
                         )
                     except Exception as e:
                         print(f"Twilio Save Error: {e}")
-                        xml_error = f'<?xml version="1.0" encoding="UTF-8"?><Response><Message>Error saving match: {str(e)}</Message></Response>'
+                        xml_error = f'<?xml version="1.0" encoding="UTF-8"?><Response><Message>Error saving match: {e!s}</Message></Response>'
                         return Response(content=xml_error, media_type="application/xml")
                     finally:
                         session.close()
@@ -1557,7 +1561,7 @@ async def twilio_webhook(request: Request):
                 return Response(content=xml_reply, media_type="application/xml")
 
         except Exception as e:
-            xml_fail = f'<?xml version="1.0" encoding="UTF-8"?><Response><Message>I\'m having trouble understanding. Error: {str(e)}</Message></Response>'
+            xml_fail = f'<?xml version="1.0" encoding="UTF-8"?><Response><Message>I\'m having trouble understanding. Error: {e!s}</Message></Response>'
             return Response(content=xml_fail, media_type="application/xml")
 
     return Response(content="OK", media_type="text/plain")
@@ -1640,7 +1644,7 @@ async def arcade_submit_score(data: ArcadeScoreSubmission):
                 print(f"AI Parse Error: {ai_err}")
                 return {
                     "status": "error",
-                    "message": f"AI Parsing failed: {str(ai_err)}",
+                    "message": f"AI Parsing failed: {ai_err!s}",
                 }
 
         # 2. Save Match to DB
@@ -1679,7 +1683,7 @@ async def arcade_submit_score(data: ArcadeScoreSubmission):
                 try:
                     # Fallback to simple date
                     match_dt = datetime.strptime(data.date, "%Y-%m-%d")
-                except:
+                except Exception:
                     pass
 
         # Determine Winner/Loser names for the record
@@ -1791,7 +1795,7 @@ def get_practice_partners(limit: int = 5):
                             if abs(s1 - s2) <= 2:  # Close set
                                 stats["close_matches"] += 1
                                 break
-                except:
+                except Exception:
                     pass
 
         # Score each opponent for practice value
@@ -1856,7 +1860,7 @@ def get_practice_partners(limit: int = 5):
                     reasons.append("Recently played")
                 elif days_since <= 90:
                     score += 5
-            except:
+            except Exception:
                 pass
 
             # --- Normalize Scores for Frontend (0.0 to 1.0) ---
@@ -1884,7 +1888,7 @@ def get_practice_partners(limit: int = 5):
                 last_played = datetime.strptime(str(stats["last_played"]), "%Y-%m-%d")
                 days_since = (datetime.now() - last_played).days
                 recent_score = max(0, 1 - (days_since / 90))  # Decay over 3 months
-            except:
+            except Exception:
                 pass
 
             # Aggregate Total Score (Weighted Average)
@@ -1972,7 +1976,7 @@ def get_tool_practice_partners(limit: int = 5):
 
 
 @app.get("/tools/tournament_intelligence")
-def get_tool_tournament_intelligence(tournament_title: str = None, limit: int = 5):
+def get_tool_tournament_intelligence(tournament_title: str | None = None, limit: int = 5):
     """Tool-specific endpoint for AI-enhanced tournament recommendations"""
     return get_tournament_intelligence(tournament_title=tournament_title, limit=limit)
 
@@ -2121,7 +2125,7 @@ CLAUDE_TOOLS = [
 ]
 
 
-async def get_claude_response(user_message: str, user_key: str = None):
+async def get_claude_response(user_message: str, user_key: str | None = None):
     """
     Reusable logic to get a response from Claude 4 with tools.
     Used by /chat endpoint AND SMS webhook.
@@ -2232,7 +2236,7 @@ async def get_claude_response(user_message: str, user_key: str = None):
     except Exception as e:
         print(f"Chat API Error: {e}")
         # FAIL LOUDLY as requested. Do not return friendly fallback.
-        raise HTTPException(status_code=503, detail=f"AI Service Error: {str(e)}")
+        raise HTTPException(status_code=503, detail=f"AI Service Error: {e!s}")
 
 
 @app.post("/chat")
@@ -2498,7 +2502,7 @@ async def get_training_recommendations(request: Request):
                             comebacks += 1
                         elif won_first_set and not is_win:
                             chokes += 1
-                except:
+                except Exception:
                     pass
 
         # 2. Construct prompt for training advice

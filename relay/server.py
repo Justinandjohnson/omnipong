@@ -23,12 +23,11 @@ import uuid
 from contextlib import asynccontextmanager
 from urllib.parse import urlsplit
 
-from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import JSONResponse, StreamingResponse
-
 import config
 import protocol as P
 from errors import BadOperatorToken, BadRegisterToken, CompanionUnresponsive, OperatorTokenNotConfigured, RelayError
+from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi.responses import JSONResponse, StreamingResponse
 from registry import Companion, Registry, Session
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s relay: %(message)s")
@@ -145,7 +144,7 @@ async def session_events(session_token: str) -> StreamingResponse:
         while True:
             try:
                 event = await asyncio.wait_for(session.events.get(), timeout=15.0)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 # C2: Cloudflare's ~100s idle timeout would otherwise drop a
                 # silent gate-wait stream — a periodic SSE comment keeps it alive.
                 yield ": keepalive\n\n"
@@ -232,7 +231,7 @@ async def session_gate_wait(session_token: str, gate_id: str) -> JSONResponse:
     try:
         await asyncio.wait_for(gate.cleared.wait(), timeout=config.GATE_TTL_S)
         return JSONResponse({"type": P.GATE_CLEARED, "gate_id": gate_id})
-    except asyncio.TimeoutError:
+    except TimeoutError:
         return JSONResponse({"type": P.GATE_TIMEOUT, "gate_id": gate_id})
 
 
@@ -272,7 +271,7 @@ async def _companion_http_rpc(session: Session, path: str) -> dict:
     try:
         await companion.send({"type": P.CDP_HTTP_REQ, "req_id": req_id, "path": path})
         return await asyncio.wait_for(fut, timeout=config.COMPANION_RPC_TIMEOUT_S)
-    except asyncio.TimeoutError as exc:
+    except TimeoutError as exc:
         raise CompanionUnresponsive(f"companion did not answer discovery GET {path!r} in time") from exc
     finally:
         companion.pending_http.pop(req_id, None)
@@ -327,7 +326,7 @@ async def cdp_devtools_ws(websocket: WebSocket, session_token: str, target_path:
             {"type": P.CDP_WS_OPEN, "channel": channel, "target_ws_path": f"/devtools/{target_path}"}
         )
         await asyncio.wait_for(open_fut, timeout=config.COMPANION_RPC_TIMEOUT_S)
-    except asyncio.TimeoutError:
+    except TimeoutError:
         companion.agent_ws_send.pop(channel, None)
         companion.pending_ws_open.pop(channel, None)
         await websocket.close(code=4504)  # CompanionUnresponsive, see errors.py

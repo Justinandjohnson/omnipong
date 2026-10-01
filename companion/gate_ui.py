@@ -35,7 +35,7 @@ def _render_page(kind: str, hint: str, url_host: str, nonce: str) -> bytes:
   <p>Site: <code>{html.escape(url_host)}</code></p>
   <p>Switch to your Chrome window, finish it there, then come back and click Continue.</p>
   <button onclick="fetch('/continue',{{method:'POST',headers:{{'X-Gate-Nonce':'{nonce}'}}}}).then(()=>document.body.innerHTML='<h2>Thanks — resuming...</h2>')">Continue</button>
-</body></html>""".encode("utf-8")
+</body></html>""".encode()
 
 
 class _GateServer(ThreadingHTTPServer):
