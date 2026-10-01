@@ -635,6 +635,101 @@ def delete_match(match_id: int):
         session.close()
 
 
+@app.get("/matches/summary")
+def get_matches_summary(source: str | None = None):
+    """All of the user's match data in one place, grouped by year.
+
+    Returns {overall, years:[{year,total,wins,losses,win_rate,tournaments,
+    matches:[...]}]}. Used by the unified Tournaments page's "My Matches" view
+    so history is browsable year by year without clicking through tabs.
+    """
+    session = SessionLocal()
+    try:
+        query = (
+            "SELECT id, date, opponent_name, opponent_rating, score_summary, "
+            "result, source, set_scores FROM matches"
+        )
+        params = {}
+        if source:
+            query += " WHERE source = :source"
+            params["source"] = source
+        query += " ORDER BY date DESC"
+
+        rows = [dict(r._mapping) for r in session.execute(text(query), params)]
+
+        def _is_win(m: dict) -> bool:
+            res = m.get("result")
+            if res in ("Win", "W"):
+                return True
+            if res in ("Loss", "L"):
+                return False
+            if res and "-" in str(res):
+                try:
+                    a, b = map(int, str(res).split("-")[:2])
+                    return a > b
+                except Exception:
+                    return False
+            return False
+
+        buckets: dict = {}
+        for m in rows:
+            date_val = m.get("date")
+            year = str(date_val)[:4] if date_val else "Unknown"
+            m["is_win"] = _is_win(m)
+            b = buckets.setdefault(
+                year,
+                {
+                    "year": year,
+                    "total": 0,
+                    "wins": 0,
+                    "losses": 0,
+                    "dates": set(),
+                    "matches": [],
+                },
+            )
+            b["total"] += 1
+            if m["is_win"]:
+                b["wins"] += 1
+            else:
+                b["losses"] += 1
+            dkey = str(date_val)[:10] if date_val else ""
+            if dkey:
+                b["dates"].add(dkey)
+            b["matches"].append(m)
+
+        years = []
+        for year in sorted(buckets.keys(), reverse=True):
+            b = buckets[year]
+            total = b["total"]
+            years.append(
+                {
+                    "year": year,
+                    "total": total,
+                    "wins": b["wins"],
+                    "losses": b["losses"],
+                    "win_rate": round(b["wins"] / total * 100) if total else 0,
+                    "tournaments": len(b["dates"]),
+                    "matches": b["matches"],
+                }
+            )
+
+        total = len(rows)
+        wins = sum(1 for m in rows if m["is_win"])
+        return {
+            "overall": {
+                "total": total,
+                "wins": wins,
+                "losses": total - wins,
+                "win_rate": round(wins / total * 100) if total else 0,
+            },
+            "years": years,
+        }
+    except Exception as e:
+        return {"error": str(e), "overall": {}, "years": []}
+    finally:
+        session.close()
+
+
 @app.post("/tournaments/signup")
 async def signup_tournament(
     tournament_title: str, recommended_events: list[str] | None = None
@@ -687,10 +782,14 @@ async def signup_tournament(
 def get_tournaments(region: str = "local"):
     session = SessionLocal()
     try:
-        # Fetch active tournaments
+        # Fetch active tournaments. `source_id` carries the OmniPong row key
+        # (e.g. "T-tourney.asp?t=100&r=6157") which we turn into a real
+        # sign-up link on the frontend; `city_state` is the cleaned location.
         result = session.execute(
             text(
-                "SELECT title, location, date_range, status, flyer_url FROM activities WHERE activity_type='tournament' ORDER BY id DESC"
+                "SELECT title, location, city_state, date_range, status, flyer_url, "
+                "source_id, url, contact_email, last_scraped FROM activities "
+                "WHERE activity_type='tournament' ORDER BY id DESC"
             )
         )
 
@@ -724,6 +823,17 @@ def get_tournaments(region: str = "local"):
             # Filtering Logic
             if region == "local" and not is_tx:
                 continue
+
+            # Build a clickable OmniPong link. Prefer the per-row source_id
+            # (which includes the tournament + region ids); fall back to the
+            # stored url. This is what the "Open on OmniPong" button uses.
+            sid = (d.get("source_id") or "").strip()
+            if sid and not sid.lower().startswith("http"):
+                d["omnipong_url"] = f"https://www.omnipong.com/{sid.lstrip('/')}"
+            elif d.get("url"):
+                d["omnipong_url"] = d["url"]
+            else:
+                d["omnipong_url"] = "https://www.omnipong.com/t-tourney.asp?e=0"
 
             # Real Data Only - No Mocks
             # If we have real events/cost in DB later, fetch here. For now leave empty/null.
