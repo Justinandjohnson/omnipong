@@ -1,28 +1,8 @@
-"use client";
-import Sidebar from "@/components/Sidebar";
-import dynamic from 'next/dynamic';
+import { redirect } from "next/navigation";
 
-// Dynamic import for Leaflet map to avoid SSR issues
-const MapView = dynamic(() => import('@/components/MapView'), { 
-  ssr: false,
-  loading: () => <div className="h-full w-full bg-[#0a0a0a] animate-pulse flex items-center justify-center text-gray-500">Loading Map Intelligence...</div>
-});
-
+// The standalone map route is retired — tournament mapping now lives on the
+// unified /tournaments page (Map tab), which has the list, calendar, map,
+// refresh, and signup links all in one place.
 export default function MapPage() {
-  return (
-    <div className="bg-[var(--background)] min-h-screen text-[var(--foreground)] flex">
-      <Sidebar />
-      <main className="flex-1 md:ml-64 pt-14 md:pt-0 h-screen flex flex-col">
-        <div className="flex-1 p-0 relative">
-             <MapView />
-             
-             {/* Overlay Controls */}
-             <div className="absolute top-8 left-16 z-[1000] pointer-events-none">
-                <h1 className="text-4xl font-bold text-white drop-shadow-md">Tournament Map</h1>
-                <p className="text-gray-300 drop-shadow-md font-medium text-sm bg-black/50 px-2 py-1 rounded inline-block">Visualizing upcoming opportunities</p>
-             </div>
-        </div>
-      </main>
-    </div>
-  );
+  redirect("/tournaments");
 }

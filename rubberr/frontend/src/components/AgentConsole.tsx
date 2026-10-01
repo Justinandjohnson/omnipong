@@ -8,10 +8,8 @@
 import React, { useState } from "react";
 import {
   Bot,
-  Trophy,
   Search,
   RefreshCw,
-  CalendarClock,
   ListChecks,
   Play,
   Loader2,
@@ -22,8 +20,6 @@ import {
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 type ActionName =
-  | "check"
-  | "tournaments"
   | "search"
   | "signup"
   | "matches"
@@ -38,18 +34,6 @@ interface ActionMeta {
 }
 
 const ACTIONS: ActionMeta[] = [
-  {
-    id: "check",
-    label: "Check for tournaments",
-    blurb: "Scout your area for new tournaments and (unless dry-run) raise alerts.",
-    icon: <CalendarClock size={18} />,
-  },
-  {
-    id: "tournaments",
-    label: "List area tournaments",
-    blurb: "Show tournaments in your configured area, optionally with events.",
-    icon: <Trophy size={18} />,
-  },
   {
     id: "search",
     label: "Search a player",
@@ -78,15 +62,12 @@ const ACTIONS: ActionMeta[] = [
 ];
 
 export default function AgentConsole() {
-  const [action, setAction] = useState<ActionName>("check");
+  const [action, setAction] = useState<ActionName>("search");
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<unknown>(null);
   const [error, setError] = useState<string | null>(null);
 
   // Per-action inputs
-  const [dryRun, setDryRun] = useState(false);
-  const [deep, setDeep] = useState(false);
-  const [limit, setLimit] = useState(5);
   const [name, setName] = useState("");
   const [title, setTitle] = useState("");
   const [events, setEvents] = useState("");
@@ -95,10 +76,6 @@ export default function AgentConsole() {
 
   function buildParams(): Record<string, unknown> {
     switch (action) {
-      case "check":
-        return { dry_run: dryRun, deep, limit };
-      case "tournaments":
-        return { deep };
       case "search":
         return { name };
       case "signup":
@@ -138,7 +115,6 @@ export default function AgentConsole() {
 
   const inputCls =
     "w-full rounded-lg bg-[#1a1a1a] border border-[#333] px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-[var(--rubber-red)]";
-  const checkCls = "h-4 w-4 accent-[var(--rubber-red)]";
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-6">
@@ -183,53 +159,6 @@ export default function AgentConsole() {
 
         {/* Inputs */}
         <div className="space-y-4 mb-5">
-          {action === "check" && (
-            <>
-              <label className="flex items-center gap-3 text-sm text-gray-300">
-                <input
-                  type="checkbox"
-                  className={checkCls}
-                  checked={dryRun}
-                  onChange={(e) => setDryRun(e.target.checked)}
-                />
-                Dry run (report only — write no alerts)
-              </label>
-              <label className="flex items-center gap-3 text-sm text-gray-300">
-                <input
-                  type="checkbox"
-                  className={checkCls}
-                  checked={deep}
-                  onChange={(e) => setDeep(e.target.checked)}
-                />
-                Deep scan (fetch events for each new tournament)
-              </label>
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">
-                  Limit (max tournaments, 0 = all)
-                </label>
-                <input
-                  type="number"
-                  className={inputCls}
-                  value={limit}
-                  min={0}
-                  onChange={(e) => setLimit(Number(e.target.value))}
-                />
-              </div>
-            </>
-          )}
-
-          {action === "tournaments" && (
-            <label className="flex items-center gap-3 text-sm text-gray-300">
-              <input
-                type="checkbox"
-                className={checkCls}
-                checked={deep}
-                onChange={(e) => setDeep(e.target.checked)}
-              />
-              Include events for each tournament
-            </label>
-          )}
-
           {action === "search" && (
             <div>
               <label className="block text-xs text-gray-500 mb-1">Player name</label>

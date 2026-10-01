@@ -1,7 +1,30 @@
 import { useState, useEffect } from 'react';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-import { Calendar, MapPin, Star, Sparkles, Users, Loader2, Check, FileText } from 'lucide-react';
+import { Calendar, MapPin, Star, Sparkles, Users, Loader2, Check, FileText, ExternalLink } from 'lucide-react';
+
+interface RecommendedEvent {
+    name: string;
+    fee?: number | string;
+    competitiveness?: string;
+}
+
+interface DoublesPartner {
+    name: string;
+    rating?: number | string;
+}
+
+interface KnownPlayer {
+    name: string;
+    your_record?: string;
+}
+
+interface AiInsights {
+    recommended_events?: RecommendedEvent[];
+    difficulty_score?: number;
+    doubles_partner_suggestions?: DoublesPartner[];
+    known_players_likely_attending?: KnownPlayer[];
+}
 
 interface TournamentProps {
     title: string;
@@ -12,10 +35,11 @@ interface TournamentProps {
     events?: string;
     tier?: string;
     flyer_url?: string;
-    aiInsights?: any;
+    url?: string;
+    aiInsights?: AiInsights | null;
 }
 
-export default function TournamentCard({ title, location, date, status, cost, events, tier, flyer_url, aiInsights }: TournamentProps) {
+export default function TournamentCard({ title, location, date, status, cost, events, tier, flyer_url, url, aiInsights }: TournamentProps) {
   const [loading, setLoading] = useState(false);
   const [signedUp, setSignedUp] = useState(status === 'Entered');
 
@@ -28,7 +52,7 @@ export default function TournamentCard({ title, location, date, status, cost, ev
       setLoading(true);
       try {
           // Extract event names from objects
-          const recommendedEvents = aiInsights?.recommended_events?.map((e: any) => e.name) || [];
+          const recommendedEvents = aiInsights?.recommended_events?.map((e) => e.name) || [];
           const response = await fetch(`${API_URL}/tournaments/signup?tournament_title=${encodeURIComponent(title)}`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -65,8 +89,8 @@ export default function TournamentCard({ title, location, date, status, cost, ev
              </div>
 
              <div className={`inline-block px-2 py-1 rounded-full text-[10px] font-medium mb-3 ${
-                aiInsights.difficulty_score <= 5 ? 'bg-green-500/30 text-green-300' :
-                aiInsights.difficulty_score <= 7 ? 'bg-yellow-500/30 text-yellow-300' :
+                (aiInsights.difficulty_score ?? 0) <= 5 ? 'bg-green-500/30 text-green-300' :
+                (aiInsights.difficulty_score ?? 0) <= 7 ? 'bg-yellow-500/30 text-yellow-300' :
                 'bg-red-500/30 text-red-300'
              }`}>
                 {aiInsights.recommended_events?.[0]?.competitiveness || "Recommended Opportunity"}
@@ -75,7 +99,7 @@ export default function TournamentCard({ title, location, date, status, cost, ev
              <div className="space-y-4 text-sm pb-1">
                 <div>
                   <div className="text-purple-200 font-bold mb-1">Recommended Events:</div>
-                  {aiInsights.recommended_events?.map((evt: any, i: number) => (
+                  {aiInsights.recommended_events?.map((evt: RecommendedEvent, i: number) => (
                     <div key={i} className="text-white font-medium flex justify-between items-center text-xs bg-black/20 rounded p-1 mb-1">
                         <span>• {evt.name}</span>
                         {evt.fee && <span className="text-green-300">${evt.fee}</span>}
@@ -103,21 +127,21 @@ export default function TournamentCard({ title, location, date, status, cost, ev
                   {loading ? 'AI Signing Up...' : signedUp ? 'Signed Up!' : 'Sign Up with AI'}
                 </button>
 
-                {aiInsights.doubles_partner_suggestions?.length > 0 && (
+                {aiInsights.doubles_partner_suggestions && aiInsights.doubles_partner_suggestions.length > 0 && (
                   <div>
                     <div className="text-pink-200 font-bold mb-1 flex items-center gap-1">
                       <Users size={14} /> Doubles Partners:
                     </div>
-                    {aiInsights.doubles_partner_suggestions.slice(0, 3).map((p: any, i: number) => (
+                    {aiInsights.doubles_partner_suggestions.slice(0, 3).map((p: DoublesPartner, i: number) => (
                       <div key={i} className="text-white font-medium">• {p.name} ({p.rating})</div>
                     ))}
                   </div>
                 )}
 
-                {aiInsights.known_players_likely_attending?.length > 0 && (
+                {aiInsights.known_players_likely_attending && aiInsights.known_players_likely_attending.length > 0 && (
                    <div>
                      <div className="text-blue-200 font-bold mb-1">Known Players:</div>
-                     {aiInsights.known_players_likely_attending.slice(0, 3).map((p: any, i: number) => (
+                     {aiInsights.known_players_likely_attending.slice(0, 3).map((p: KnownPlayer, i: number) => (
                        <div key={i} className="text-white font-medium">• {p.name} ({p.your_record})</div>
                      ))}
                    </div>
@@ -187,7 +211,20 @@ export default function TournamentCard({ title, location, date, status, cost, ev
                         </a>
                       )}
 
-                      {!aiInsights && (
+                      {url && (
+                        <a
+                          href={url}
+                          target="_blank"
+                          rel="noreferrer"
+                          onClick={(e) => e.stopPropagation()}
+                          className="px-3 py-1.5 rounded-lg font-bold text-[10px] flex items-center gap-1.5 bg-[var(--rubber-red)] text-white hover:bg-red-600 transition-all"
+                          title="Open this tournament on OmniPong to sign up"
+                        >
+                          <ExternalLink size={10} /> Sign up on OmniPong
+                        </a>
+                      )}
+
+                      {!aiInsights && !url && (
                         <button 
                           onClick={(e) => {
                             e.stopPropagation();
